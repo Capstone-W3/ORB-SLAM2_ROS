@@ -54,18 +54,30 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "RGBD");
     ros::start();
 
-    if(argc != 3)
-    {
-        cerr << endl << "Usage: rosrun ORB_SLAM2 RGBD path_to_vocabulary path_to_settings" << endl;        
-        ros::shutdown();
-        return 1;
-    }    
+    if(argc > 1) {
+        ROS_WARN ("Arguments supplied via command line are neglected.");
+    }
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
-    const double freq = 100.0;
+    double freq = 100.0;
+    std::string voc_file, camera_settings_file;
+
     // Set up a namespace for topics
-    ros::NodeHandle nh("/orb_slam2");
-    ORB_SLAM2::System SLAM(make_unique<ROSSystemBuilder>(argv[1], argv[2], ORB_SLAM2::System::RGBD, freq, nh));
+    ros::NodeHandle nh;
+    std::string name_of_node_ = ros::this_node::getName();
+
+    std::cout << "Using Node " << name_of_node_ << std::endl;
+
+    nh.param<double>(name_of_node_ + "/topic/freq", freq, 100.0);
+    nh.param<std::string>(name_of_node_ + "/voc_file", voc_file, "orb_slam2_lib/Vocabulary/ORBvoc");
+    nh.param<std::string>(name_of_node_ + "/camera_settings_file", camera_settings_file, "orb_slam2_ros/settings/realsense_rgbd.yaml");
+
+    ORB_SLAM2::System SLAM( make_unique<ROSSystemBuilder>(
+                            voc_file,
+                            camera_settings_file,
+                            ORB_SLAM2::System::RGBD, 
+                            freq, 
+                            nh));
 
     ImageGrabber igb(&SLAM);
     ros::NodeHandle nodeHandler;
@@ -114,8 +126,8 @@ void ImageGrabber::GrabRGBD(const sensor_msgs::ImageConstPtr& msgRGB,const senso
         ROS_ERROR("cv_bridge exception: %s", e.what());
         return;
     }
-
-    mpSLAM->TrackRGBD(cv_ptrRGB->image,cv_ptrD->image,cv_ptrRGB->header.stamp.toSec());
+    // std::cout << "Incoming image time: " << cv_ptrRGB->header.stamp << std::endl;
+    mpSLAM->TrackRGBD(cv_ptrRGB->image, cv_ptrD->image, cv_ptrRGB->header.stamp.toSec());
 }
 
 

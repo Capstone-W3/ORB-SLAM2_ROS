@@ -10,23 +10,7 @@ echo -e "Let this script be the ${CYN}first execution after cleaning workspace${
 echo -e "${RED}Be careful!${NC} It will rebuild all packages from workspace"
 echo " "
 
-echo -e "Trying to install ${GRN}Eigen3${NC} and ${GRN}octomap${NC} packages. You need to write password in order to do that..."
-sleep 1
-sudo apt install libeigen3-dev
-sudo apt install ros-$ROS_DISTRO-octomap
-
-echo "Downloading the vocabulary file..."
-mkdir -p orb_slam2_lib/Vocabulary
-wget -O orb_slam2_lib/Vocabulary/ORBvoc.txt.tar.gz https://github.com/raulmur/ORB_SLAM2/raw/master/Vocabulary/ORBvoc.txt.tar.gz
-echo " "
-echo "Unpacking the vocabulary file..."
-sleep 1
-cd orb_slam2_lib/Vocabulary/
-tar xf ORBvoc.txt.tar.gz
-echo "Done"
-echo " "
-sleep 1
-cd ../../../../.. # back to the workspace main folder
+cd ../../..
 
 catkin build -j1 orb_slam2_lib
 source devel/setup.bash
@@ -49,13 +33,6 @@ source devel/setup.bash
 sleep 3
 catkin build -j1 orb_slam2_ros orb_slam2_lib
 source devel/setup.bash
-sleep 2
-
-echo " "
-echo -e "${CYN}Converting vocabulary to binary...${NC}"
-sleep 1
-cd src/ORB-SLAM2_ROS/ORB_SLAM2/orb_slam2_lib
-./bin_vocabulary
 sleep 1
 
 echo " "

@@ -42,140 +42,158 @@ ROSPublisher::ROSPublisher(Map *map, double frequency, ros::NodeHandle nh) :
     IMapPublisher(map),
     drawer_(GetMap()),
     nh_(std::move(nh)),
+    name_of_node_(ros::this_node::getName()),
     pub_rate_(frequency),
     lastBigMapChange_(-1),
     octomap_tf_based_(false),
-    octomap_(PublisherUtils::getROSParam<float>(nh, "/orb_slam2_ros/octomap/resolution", 0.1)),
+    octomap_(PublisherUtils::getROSParam<float>(nh, name_of_node_ + "/octomap/resolution", 0.1)),
     pointcloud_chunks_stashed_(0),
     clear_octomap_(false),
     localize_only(false),
     map_scale_(1.50),
     perform_scale_correction_(true),
     scaling_distance_(1.00),
-    camera_height_(0.205),
+    camera_height_(0.0),
     camera_height_mult_(1.0),
     camera_height_corrected_(camera_height_*camera_height_mult_),
     publish_octomap_(false), publish_projected_map_(true), publish_gradient_map_(false)
 {
 
-    initializeParameters(nh);
-    orb_state_.state = orb_slam2_ros::ORBState::UNKNOWN;
+  initializeParameters(nh);
+  orb_state_.state = orb_slam2_ros::ORBState::UNKNOWN;
 
-    // initialize publishers
-    map_pub_         = nh_.advertise<sensor_msgs::PointCloud2>("map", 3);
-    map_updates_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("map_updates", 3);
-    image_pub_       = nh_.advertise<sensor_msgs::Image>("frame", 5);
-    state_pub_       = nh_.advertise<orb_slam2_ros::ORBState>("info/state", 10);
-    state_desc_pub_  = nh_.advertise<std_msgs::String>("info/state_description", 10);
-    kp_pub_          = nh_.advertise<std_msgs::UInt32>("info/frame_keypoints", 1);
-    kf_pub_          = nh_.advertise<std_msgs::UInt32>("info/map_keyframes", 1);
-    mp_pub_          = nh_.advertise<std_msgs::UInt32>("info/matched_points", 1);
-    loop_close_pub_  = nh_.advertise<std_msgs::Bool>("info/loop_closed", 2);
-    trajectory_pub_  = nh_.advertise<nav_msgs::Path>("cam_path", 2);
+  // initialize publishers
+  map_pub_         = nh_.advertise<sensor_msgs::PointCloud2>("map", 3);
+  map_updates_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("map_updates", 3);
+  image_pub_       = nh_.advertise<sensor_msgs::Image>("frame", 5);
+  state_pub_       = nh_.advertise<orb_slam2_ros::ORBState>("info/state", 10);
+  state_desc_pub_  = nh_.advertise<std_msgs::String>("info/state_description", 10);
+  kp_pub_          = nh_.advertise<std_msgs::UInt32>("info/frame_keypoints", 1);
+  kf_pub_          = nh_.advertise<std_msgs::UInt32>("info/map_keyframes", 1);
+  mp_pub_          = nh_.advertise<std_msgs::UInt32>("info/matched_points", 1);
+  loop_close_pub_  = nh_.advertise<std_msgs::Bool>("info/loop_closed", 2);
+  cam_pose_pub_    = nh_.advertise<geometry_msgs::PoseStamped>("cam_pose", 2);
+  trajectory_pub_  = nh_.advertise<nav_msgs::Path>("cam_path", 2);
 
-    // initialize subscribers
-    mode_sub_       = nh_.subscribe("switch_mode",    1, &ROSPublisher::localizationModeCallback,   this);
-    clear_path_sub_ = nh_.subscribe("clear_cam_path", 1, &ROSPublisher::clearCamTrajectoryCallback, this);
+  // initialize subscribers
+  mode_sub_       = nh_.subscribe("switch_mode",    1, &ROSPublisher::localizationModeCallback,   this);
+  clear_path_sub_ = nh_.subscribe("clear_cam_path", 1, &ROSPublisher::clearCamTrajectoryCallback, this);
 
-    if (octomap_enabled_)
-    {
-      if ( publish_octomap_ ) {
-        octomap_pub_ = nh_.advertise<octomap_msgs::Octomap>("octomap", 3);
-      }
-      if ( publish_projected_map_ ) {
-        projected_map_pub_ = nh.advertise<nav_msgs::OccupancyGrid>("projected_map", 5, 10);
-        projected_morpho_map_pub_ = nh.advertise<nav_msgs::OccupancyGrid>("projected_morpho_map", 5, 10);
-      }
-      if ( publish_gradient_map_ ) {
-        gradient_map_pub_ = nh.advertise<nav_msgs::OccupancyGrid>("gradient_map", 5, 10);
-      }
+  // Initialization transformation listener
+  tfBuffer_.reset(new tf2_ros::Buffer);
+  tfListener_.reset(new tf2_ros::TransformListener(*tfBuffer_));
+
+  if (octomap_enabled_)
+  {
+    if ( publish_octomap_ ) {
+      octomap_pub_ = nh_.advertise<octomap_msgs::Octomap>("octomap", 3);
     }
+    if ( publish_projected_map_ ) {
+      projected_map_pub_ = nh.advertise<nav_msgs::OccupancyGrid>("projected_map", 5, 10);
+      projected_morpho_map_pub_ = nh.advertise<nav_msgs::OccupancyGrid>("projected_morpho_map", 5, 10);
+    }
+    if ( publish_gradient_map_ ) {
+      gradient_map_pub_ = nh.advertise<nav_msgs::OccupancyGrid>("gradient_map", 5, 10);
+    }
+  }
 
-    if ( perform_scale_correction_ ) { // TODO: make available only for monocular cameras
+  // set up filter for height range, also removes NANs:
+  // pass_x_.setFilterFieldName("x");
+  // pass_x_.setFilterLimits(pointcloud_min_x_, pointcloud_max_x_);
+  // pass_y_.setFilterFieldName("y");
+  // pass_y_.setFilterLimits(pointcloud_min_y_, pointcloud_max_y_);
 
-      try {
+  if ( perform_scale_correction_ ) { // TODO: make available only for monocular cameras
 
-        // only "z" translation component is used (to put PCL/octomap higher/lower)
-        tf::StampedTransform tf_target;
-        tf::Vector3 cam_base_translation_tf_;
+    try {
 
-        tf_listener_.waitForTransform(camera_frame_, base_frame_, ros::Time::now(), ros::Duration(1.0));
-        tf_listener_.lookupTransform (camera_frame_, base_frame_, ros::Time(0), tf_target);
+      // only "z" translation component is used (to put PCL/octomap higher/lower)
+      tf::StampedTransform tf_target;
+      tf::Vector3 cam_base_translation_tf_;
 
-        cam_base_translation_tf_.setX(tf_target.getOrigin().x());
-        cam_base_translation_tf_.setY(tf_target.getOrigin().y());
-        cam_base_translation_tf_.setZ(tf_target.getOrigin().z());
-        cam_base_translation_tf_.setW(tfScalar(1.0));
+      // tf_listener_.waitForTransform(camera_frame_, base_frame_, ros::Time::now(), ros::Duration(1.0));
+      tf_listener_.waitForTransform(camera_frame_, base_frame_, current_frame_time_, ros::Duration(1.0));
+      tf_listener_.lookupTransform (camera_frame_, base_frame_, ros::Time(0), tf_target);
 
-        // rotation base -> camera applied to corresponding translation from real world
-        tf::Transform tf = PublisherUtils::createTF(cam_base_translation_tf_,
-                                                    PublisherUtils::quaternionFromRPY(0.0, 0.0, 0.0));
+      cam_base_translation_tf_.setX(tf_target.getOrigin().x());
+      cam_base_translation_tf_.setY(tf_target.getOrigin().y());
+      cam_base_translation_tf_.setZ(tf_target.getOrigin().z());
+      cam_base_translation_tf_.setW(tfScalar(1.0));
 
-        tf::Transform tf_correction = PublisherUtils::createTF(tf::Vector3(0.0, 0.0, 0.0),
-                                                               PublisherUtils::quaternionFromRPY(90.0, 0.0, -90.0));
-        tf = tf_correction * tf;
+      // rotation base -> camera applied to corresponding translation from real world
+      tf::Transform tf = PublisherUtils::createTF(cam_base_translation_tf_,
+                                                  PublisherUtils::quaternionFromRPY(0.0, 0.0, 0.0));
 
-        camera_height_ = tf.getOrigin().z();
-        ROS_INFO("camera height: %.1f", camera_height_);
+      tf::Transform tf_correction = PublisherUtils::createTF(tf::Vector3(0.0, 0.0, 0.0),
+                                                              PublisherUtils::quaternionFromRPY(90.0, 0.0, -90.0));
+      tf = tf_correction * tf;
 
-      } catch (tf::TransformException &ex) {
-        ROS_ERROR("%s",ex.what());
-        ros::Duration(3.0).sleep();
-      }
-
-    } else {
-
+      camera_height_ = tf.getOrigin().z();
       ROS_INFO("camera height: %.1f", camera_height_);
 
+    } catch (tf::TransformException &ex) {
+      ROS_ERROR("%s",ex.what());
+      ros::Duration(3.0).sleep();
     }
 
-    // used because of scale correction coefficient non-ideal estimation
-    camera_height_corrected_ = camera_height_ * camera_height_mult_;
+  } else {
+
+    ROS_INFO("camera height: %.1f", camera_height_);
+
+  }
+
+  // used because of scale correction coefficient non-ideal estimation
+  camera_height_corrected_ = camera_height_ * camera_height_mult_;
 
 }
 
 void ROSPublisher::initializeParameters(ros::NodeHandle &nh) {
 
   // freq and image_topic are defined in ros_mono.cc
-  nh.param<float>("/orb_slam2_ros/topic/orb_state_republish_rate", orb_state_republish_rate_, 1);
+  nh.param<float>(name_of_node_ + "/topic/orb_state_republish_rate", orb_state_republish_rate_, 1);
+  nh.param<bool>(name_of_node_ + "/topic/requires_subscriber", requires_subscriber_, true);
+  nh.param<bool>(name_of_node_ + "/octomap/requires_subscriber", octomap_requires_subscriber_, true);
+  nh.param<bool>(name_of_node_ + "/topic/image_requires_subscriber", image_requires_subscriber_, true);
+
 
   // odom topic defined in ScaleCorrector.cpp
-  nh.param<bool>("/orb_slam2_ros/map_scale/perform_correction",        perform_scale_correction_,  true);
-  nh.param<float>("/orb_slam2_ros/map_scale/scaling_distance",         scaling_distance_,          1.000);
-  nh.param<float>("/orb_slam2_ros/map_scale/set_manually",             map_scale_,                 1.500);
-  nh.param<float>("/orb_slam2_ros/map_scale/camera_height",            camera_height_,             0.205);
-  nh.param<float>("/orb_slam2_ros/map_scale/camera_height_multiplier", camera_height_mult_,        1.000);
+  nh.param<bool>(name_of_node_ + "/map_scale/perform_correction",        perform_scale_correction_,  true);
+  nh.param<float>(name_of_node_ + "/map_scale/scaling_distance",         scaling_distance_,          1.000);
+  nh.param<float>(name_of_node_ + "/map_scale/set_manually",             map_scale_,                 1.500);
+  nh.param<float>(name_of_node_ + "/map_scale/camera_height",            camera_height_,             0.205);
+  nh.param<float>(name_of_node_ + "/map_scale/camera_height_multiplier", camera_height_mult_,        1.000);
 
-  nh.param<std::string>("/orb_slam2_ros/frame/map_frame",          map_frame_,          ROSPublisher::DEFAULT_MAP_FRAME);
-  nh.param<std::string>("/orb_slam2_ros/frame/map_frame_adjusted", map_frame_adjusted_, "/orb_slam2/odom");
-  nh.param<std::string>("/orb_slam2_ros/frame/camera_frame",       camera_frame_,       ROSPublisher::DEFAULT_CAMERA_FRAME);
-  nh.param<std::string>("/orb_slam2_ros/frame/base_frame",         base_frame_,         "/orb_slam2/base_link");
+  nh.param<bool>       (name_of_node_ + "/frame/adjust_map_frame",   adjust_map_frame_,   false);
+  nh.param<std::string>(name_of_node_ + "/frame/map_frame",          map_frame_,          ROSPublisher::DEFAULT_MAP_FRAME);
+  nh.param<std::string>(name_of_node_ + "/frame/map_frame_adjusted", map_frame_adjusted_, "/orb_slam2/odom");
+  nh.param<std::string>(name_of_node_ + "/frame/camera_frame",       camera_frame_,       ROSPublisher::DEFAULT_CAMERA_FRAME);
+  nh.param<std::string>(name_of_node_ + "/frame/base_frame",         base_frame_,         "/orb_slam2/base_link");
 
-  nh.param<bool>("/orb_slam2_ros/octomap/enabled",                octomap_enabled_,        true);
-  nh.param<bool>("/orb_slam2_ros/octomap/publish_octomap",        publish_octomap_,        false);
-  nh.param<bool>("/orb_slam2_ros/octomap/publish_projected_map",  publish_projected_map_,  true);
-  nh.param<bool>("/orb_slam2_ros/octomap/publish_gradient_map",   publish_gradient_map_,   false);
+  nh.param<bool>(name_of_node_ + "/octomap/enabled",                octomap_enabled_,        true);
+  nh.param<bool>(name_of_node_ + "/octomap/publish_octomap",        publish_octomap_,        false);
+  nh.param<bool>(name_of_node_ + "/octomap/publish_projected_map",  publish_projected_map_,  true);
+  nh.param<bool>(name_of_node_ + "/octomap/publish_gradient_map",   publish_gradient_map_,   false);
 
-  nh.param<bool>("/orb_slam2_ros/octomap/rebuild",  octomap_rebuild_, false);
-  nh.param<float>("/orb_slam2_ros/octomap/rate",    octomap_rate_,    1.0);
+  nh.param<bool>(name_of_node_ + "/octomap/rebuild",  octomap_rebuild_, false);
+  nh.param<float>(name_of_node_ + "/octomap/rate",    octomap_rate_,    1.0);
   // resolution is set default in constructor
 
-  nh.param<double>("/orb_slam2_ros/occupancy/projected_map/min_height", projection_min_height_,  -10.0);
-  nh.param<double>("/orb_slam2_ros/occupancy/projected_map/max_height", projection_max_height_,  +10.0);
+  nh.param<double>(name_of_node_ + "/occupancy/projected_map/min_height", projection_min_height_,  -10.0);
+  nh.param<double>(name_of_node_ + "/occupancy/projected_map/max_height", projection_max_height_,  +10.0);
 
-  nh.param<int>   ("/orb_slam2_ros/occupancy/projected_map/morpho_oprations/erode_se_size",  erode_se_size_,  3);
-  nh.param<int>   ("/orb_slam2_ros/occupancy/projected_map/morpho_oprations/erode_nb",       erode_nb_,       1);
-  nh.param<int>   ("/orb_slam2_ros/occupancy/projected_map/morpho_oprations/open_se_size",   open_se_size_,   3);
-  nh.param<int>   ("/orb_slam2_ros/occupancy/projected_map/morpho_oprations/open_nb",        open_nb_,        1);
-  nh.param<int>   ("/orb_slam2_ros/occupancy/projected_map/morpho_oprations/close_se_size",  close_se_size_,  3);
-  nh.param<int>   ("/orb_slam2_ros/occupancy/projected_map/morpho_oprations/close_nb",       close_nb_,       1);
-  nh.param<int>   ("/orb_slam2_ros/occupancy/projected_map/morpho_oprations/erode2_se_size", erode2_se_size_, 3);
-  nh.param<int>   ("/orb_slam2_ros/occupancy/projected_map/morpho_oprations/erode2_nb",      erode2_nb_,      1);
+  nh.param<int>   (name_of_node_ + "/occupancy/projected_map/morpho_oprations/erode_se_size",  erode_se_size_,  3);
+  nh.param<int>   (name_of_node_ + "/occupancy/projected_map/morpho_oprations/erode_nb",       erode_nb_,       1);
+  nh.param<int>   (name_of_node_ + "/occupancy/projected_map/morpho_oprations/open_se_size",   open_se_size_,   3);
+  nh.param<int>   (name_of_node_ + "/occupancy/projected_map/morpho_oprations/open_nb",        open_nb_,        1);
+  nh.param<int>   (name_of_node_ + "/occupancy/projected_map/morpho_oprations/close_se_size",  close_se_size_,  3);
+  nh.param<int>   (name_of_node_ + "/occupancy/projected_map/morpho_oprations/close_nb",       close_nb_,       1);
+  nh.param<int>   (name_of_node_ + "/occupancy/projected_map/morpho_oprations/erode2_se_size", erode2_se_size_, 3);
+  nh.param<int>   (name_of_node_ + "/occupancy/projected_map/morpho_oprations/erode2_nb",      erode2_nb_,      1);
 
-  nh.param<float> ("/orb_slam2_ros/occupancy/height_gradient_map/max_height",   gradient_max_height_,   0);
-  nh.param<int>   ("/orb_slam2_ros/occupancy/height_gradient_map/nb_erosions",  gradient_nb_erosions_,  1);
-  nh.param<float> ("/orb_slam2_ros/occupancy/height_gradient_map/low_slope",    gradient_low_slope_,    M_PI / 4.0);
-  nh.param<float> ("/orb_slam2_ros/occupancy/height_gradient_map/high_slope",   gradient_high_slope_,   M_PI / 3.0);
+  nh.param<float> (name_of_node_ + "/occupancy/height_gradient_map/max_height",   gradient_max_height_,   0);
+  nh.param<int>   (name_of_node_ + "/occupancy/height_gradient_map/nb_erosions",  gradient_nb_erosions_,  1);
+  nh.param<float> (name_of_node_ + "/occupancy/height_gradient_map/low_slope",    gradient_low_slope_,    M_PI / 4.0);
+  nh.param<float> (name_of_node_ + "/occupancy/height_gradient_map/high_slope",   gradient_high_slope_,   M_PI / 3.0);
 
   std::cout << endl;
   std::cout << "ROS Publisher parameters" << endl;
@@ -216,12 +234,110 @@ void ROSPublisher::initializeParameters(ros::NodeHandle &nh) {
   std::cout << endl;
 
   // DEPRECATED
-  // nh.param<bool>("/orb_slam2_ros/octomap/tf_based", octomap_tf_based_, false);
-  // nh.param<bool>("/orb_slam2_ros/frame/align_map_to_cam_frame",   align_map_to_cam_frame_, true);
-  // nh.param<bool>("/orb_slam2_ros/frame/adjust_map_frame",          adjust_map_frame_,      false);
-  // nh.param<float>("/orb_slam2_ros/topic/loop_close_republish_rate_", loop_close_republish_rate_, ROSPublisher::LOOP_CLOSE_REPUBLISH_RATE);
+  // nh.param<bool>(name_of_node_ + "/octomap/tf_based", octomap_tf_based_, false);
+  // nh.param<bool>(name_of_node_ + "/frame/align_map_to_cam_frame",   align_map_to_cam_frame_, true);
+  // nh.param<float>(name_of_node_ + "/topic/loop_close_republish_rate_", loop_close_republish_rate_, ROSPublisher::LOOP_CLOSE_REPUBLISH_RATE);
 
 }
+
+
+tf2::Transform ROSPublisher::TransformFromMat (cv::Mat position_mat) {
+  cv::Mat rotation(3,3,CV_32F);
+  cv::Mat translation(3,1,CV_32F);
+
+  rotation = position_mat.rowRange(0,3).colRange(0,3);
+  translation = position_mat.rowRange(0,3).col(3);
+
+
+  tf2::Matrix3x3 tf_camera_rotation (rotation.at<float> (0,0), rotation.at<float> (0,1), rotation.at<float> (0,2),
+                                     rotation.at<float> (1,0), rotation.at<float> (1,1), rotation.at<float> (1,2),
+                                     rotation.at<float> (2,0), rotation.at<float> (2,1), rotation.at<float> (2,2)
+                                    );
+
+  tf2::Vector3 tf_camera_translation (translation.at<float> (0), 
+                                      translation.at<float> (1), 
+                                      translation.at<float> (2)
+                                     );
+
+  //Coordinate transformation matrix from orb coordinate system to ros coordinate system
+  const tf2::Matrix3x3 tf_orb_to_ros (0, 0, 1,
+                                     -1, 0, 0,
+                                      0,-1, 0);
+
+  tf2::Matrix3x3 tf_rot_orbCam_to_rosCam, tf_rot_rosCam_to_orbCam, tf_rot_orbCam_to_rosMap;
+  tf2::Vector3   tf_trans_orbCam_to_rosCam, tf_trans_rosCam_to_orbCam, tf_trans_orbCam_to_rosMap;
+  //Transform from orb coordinate system to ros coordinate system on camera coordinates
+  tf_rot_orbCam_to_rosCam = tf_orb_to_ros*tf_camera_rotation;
+  tf_trans_orbCam_to_rosCam = tf_orb_to_ros*tf_camera_translation;
+
+  //Inverse matrix
+  tf_rot_rosCam_to_orbCam = tf_rot_orbCam_to_rosCam.transpose();
+  tf_trans_rosCam_to_orbCam = -(tf_rot_rosCam_to_orbCam*tf_trans_orbCam_to_rosCam);
+
+  //Transform from orb coordinate system to ros coordinate system on map coordinates
+  tf_rot_orbCam_to_rosMap = tf_orb_to_ros*tf_rot_rosCam_to_orbCam;
+  tf_trans_orbCam_to_rosMap = tf_orb_to_ros*tf_trans_rosCam_to_orbCam;
+
+  return tf2::Transform (tf_rot_orbCam_to_rosMap, tf_trans_orbCam_to_rosMap);
+}
+
+
+tf2::Transform ROSPublisher::TransformToTarget (tf2::Transform tf_in, std::string frame_in, std::string frame_target) {
+  // Transform tf_in from frame_in to frame_target
+  tf2::Transform tf_map2orig = tf_in;
+  tf2::Transform tf_orig2target;
+  tf2::Transform tf_map2target;
+
+  tf2::Stamped<tf2::Transform> transformStamped_temp;
+  try {
+    // Get the transform from camera to target
+    geometry_msgs::TransformStamped tf_msg = tfBuffer_->lookupTransform(frame_in, frame_target, ros::Time(0));
+    // Convert to tf2
+    tf2::fromMsg(tf_msg, transformStamped_temp);
+    tf_orig2target.setBasis(transformStamped_temp.getBasis());
+    tf_orig2target.setOrigin(transformStamped_temp.getOrigin());
+
+  } catch (tf2::TransformException &ex) {
+    ROS_WARN("%s",ex.what());
+    //ros::Duration(1.0).sleep();
+    tf_orig2target.setIdentity();
+  }
+
+  /* 
+    // Print debug info
+    double roll, pitch, yaw;
+    // Print debug map2orig
+    tf2::Matrix3x3(tf_map2orig.getRotation()).getRPY(roll, pitch, yaw);
+    ROS_INFO("Static transform Map to Orig [%s -> %s]",
+                    map_frame_id_param_.c_str(), frame_in.c_str());
+    ROS_INFO(" * Translation: {%.3f,%.3f,%.3f}",
+                    tf_map2orig.getOrigin().x(), tf_map2orig.getOrigin().y(), tf_map2orig.getOrigin().z());
+    ROS_INFO(" * Rotation: {%.3f,%.3f,%.3f}",
+                    RAD2DEG(roll), RAD2DEG(pitch), RAD2DEG(yaw));
+    // Print debug tf_orig2target
+    tf2::Matrix3x3(tf_orig2target.getRotation()).getRPY(roll, pitch, yaw);
+    ROS_INFO("Static transform Orig to Target [%s -> %s]",
+                    frame_in.c_str(), frame_target.c_str());
+    ROS_INFO(" * Translation: {%.3f,%.3f,%.3f}",
+                    tf_orig2target.getOrigin().x(), tf_orig2target.getOrigin().y(), tf_orig2target.getOrigin().z());
+    ROS_INFO(" * Rotation: {%.3f,%.3f,%.3f}",
+                    RAD2DEG(roll), RAD2DEG(pitch), RAD2DEG(yaw));
+    // Print debug map2target
+    tf2::Matrix3x3(tf_map2target.getRotation()).getRPY(roll, pitch, yaw);
+    ROS_INFO("Static transform Map to Target [%s -> %s]",
+                    map_frame_id_param_.c_str(), frame_target.c_str());
+    ROS_INFO(" * Translation: {%.3f,%.3f,%.3f}",
+                    tf_map2target.getOrigin().x(), tf_map2target.getOrigin().y(), tf_map2target.getOrigin().z());
+    ROS_INFO(" * Rotation: {%.3f,%.3f,%.3f}",
+                    RAD2DEG(roll), RAD2DEG(pitch), RAD2DEG(yaw));
+  */
+
+  // Transform from map to target
+  tf_map2target = tf_map2orig * tf_orig2target;
+  return tf_map2target;
+}
+
+
 
 /*
  * Either appends all GetReferenceMapPoints to the pointcloud stash or clears the stash and re-fills it
@@ -233,28 +349,35 @@ void ROSPublisher::stashMapPoints(bool all_map_points)
 
     pointcloud_map_points_mutex_.lock();
 
-    if (all_map_points || GetMap()->GetLastBigChangeIdx() > lastBigMapChange_)
-    {
-        map_points = GetMap()->GetAllMapPoints();
-        lastBigMapChange_ = GetMap()->GetLastBigChangeIdx();
-        clear_octomap_ = true;
-        pointcloud_map_points_.clear();
-        pointcloud_chunks_stashed_ = 1;
+    if (all_map_points || GetMap()->GetLastBigChangeIdx() > lastBigMapChange_) {
+      pointcloud_map_points_.clear();
+      octomap::pointCloud2ToOctomap(all_map_points_, pointcloud_map_points_);
+      
+      // map_points = GetMap()->GetAllMapPoints();
+      lastBigMapChange_ = GetMap()->GetLastBigChangeIdx();
+      clear_octomap_ = true;
+      pointcloud_chunks_stashed_ = 1;
 
-    } else {
+    } 
+    else {
+      // pass_x_.setInputCloud(reference_map_points_.makeShared());
+      // pass_x_.filter(reference_map_points_);
+      // pass_y_.setInputCloud(reference_map_points_.makeShared());
+      // pass_y_.filter(reference_map_points_);
+      octomap::pointCloud2ToOctomap(reference_map_points_, pointcloud_map_points_);
 
-        map_points = GetMap()->GetReferenceMapPoints();
-        pointcloud_chunks_stashed_++;
+      // map_points = GetMap()->GetReferenceMapPoints();
+      pointcloud_chunks_stashed_++;
     }
 
-    for (MapPoint *map_point : map_points) {
-        if (map_point->isBad()) {
-            continue;
-        }
-        cv::Mat pos = map_point->GetWorldPos();
-        PublisherUtils::transformPoint(pos, map_scale_, true, 1, camera_height_corrected_);
-        pointcloud_map_points_.push_back(pos.at<float>(0), pos.at<float>(1), pos.at<float>(2));
-    }
+    // for (MapPoint *map_point : map_points) {
+    //     if (map_point->isBad()) {
+    //         continue;
+    //     }
+    //     cv::Mat pos = map_point->GetWorldPos();
+    //     PublisherUtils::transformPoint(pos, map_scale_, true, 1, camera_height_corrected_);
+    //     pointcloud_map_points_.push_back(pos.at<float>(0), pos.at<float>(1), pos.at<float>(2));
+    // }
 
     pointcloud_map_points_mutex_.unlock();
 }
@@ -294,11 +417,14 @@ void ROSPublisher::octomapWorker()
             tf::StampedTransform transform_in_target_frame;
             tf_listener_.waitForTransform(base_frame_, camera_frame_, ros::Time(0), ros::Duration(1.0));
             tf_listener_.lookupTransform( base_frame_, camera_frame_, ros::Time(0), transform_in_target_frame);
-            static const tf::Transform octomap = PublisherUtils::createTF(tf::Vector3(tfScalar(0.0),
+            
+            // geometry_msgs::TransformStamped tf_msg = tfBuffer_->lookupTransform(frame_in, frame_target, ros::Time(0));
+
+            static const tf::Transform tf_octomap = PublisherUtils::createTF(tf::Vector3(tfScalar(0.0),
                                                                                       tfScalar(0.0),
                                                                                       tfScalar(camera_height_corrected_)),
                                                                           transform_in_target_frame.getRotation() );
-            frame = octomap::poseTfToOctomap(octomap);
+            frame = octomap::poseTfToOctomap(tf_octomap);
             got_tf = true;
 
           } catch (tf::TransformException &ex) {
@@ -678,13 +804,17 @@ void ROSPublisher::octomapGradientToOccupancyGrid(const octomap::OcTree& octree,
  */
 void ROSPublisher::publishMap()
 {
-    if (map_pub_.getNumSubscribers() > 0)
+    all_map_points_ = PublisherUtils::convertToPCL2(GetMap()->GetAllMapPoints(),
+                                                                map_scale_,
+                                                                camera_height_corrected_);
+
+    if (map_pub_.getNumSubscribers() > 0 || !requires_subscriber_)
     {
-        sensor_msgs::PointCloud2 msg = PublisherUtils::convertToPCL2(GetMap()->GetAllMapPoints(),
-                                                                     map_scale_,
-                                                                     camera_height_corrected_);
-        msg.header.frame_id = map_frame_;
-        map_pub_.publish(msg);
+        
+        all_map_points_.header.frame_id = map_frame_;
+        // msg.header.stamp = ros::Time::now();;
+        all_map_points_.header.stamp = current_frame_time_;
+        map_pub_.publish(all_map_points_);
 
     }
 }
@@ -694,115 +824,165 @@ void ROSPublisher::publishMap()
  */
 void ROSPublisher::publishMapUpdates()
 {
+    reference_map_points_ = PublisherUtils::convertToPCL2(GetMap()->GetReferenceMapPoints(),
+                                                          map_scale_,
+                                                          camera_height_corrected_);
 
-    if (map_updates_pub_.getNumSubscribers() > 0)
+    if (map_updates_pub_.getNumSubscribers() > 0 || !requires_subscriber_)
     {
-        /*
-        sensor_msgs::PointCloud2 msg = PublisherUtils::convertToPCL2(GetMap()->GetAllMapPoints(),
-                                                                     map_scale_,
-                                                                     camera_height_corrected_);
-         */
-        sensor_msgs::PointCloud2 msg = PublisherUtils::convertToPCL2(GetMap()->GetReferenceMapPoints(),
-                                                                     map_scale_,
-                                                                     camera_height_corrected_);
-        msg.header.frame_id = map_frame_;
-        map_updates_pub_.publish(msg);
+        // sensor_msgs::PointCloud2 msg = PublisherUtils::convertToPCL2(GetMap()->GetAllMapPoints(),
+        //                                                              map_scale_,
+        //                                                              camera_height_corrected_);
+        
+        reference_map_points_.header.frame_id = map_frame_;
+        map_updates_pub_.publish(reference_map_points_);
     }
 }
 
 /*
  * Publishes ORB_SLAM 2 GetCameraPose() as a TF.
  */
-void ROSPublisher::publishCameraPose()
+void ROSPublisher::publishCameraPose(cv::Mat orbCameraPose)
 {
+  
+  tf2::Transform tf_pos_camera_in_map = TransformFromMat(orbCameraPose);
+
+  // Make transform from camera frame to target frame
+  tf2::Transform tf_pos_target_in_map = TransformToTarget(tf_pos_camera_in_map, camera_frame_, base_frame_);
+  
+  // Make message
+  tf2::Stamped<tf2::Transform> tf_pos_target_in_map_stamped;
+  tf_pos_target_in_map_stamped = tf2::Stamped<tf2::Transform>(tf_pos_target_in_map, current_frame_time_, map_frame_);
+  
+  tf2::toMsg(tf_pos_target_in_map_stamped, cam_pose_);
+  cam_pose_pub_.publish(cam_pose_);
+
+  ResetCamFlag();
+
 
     // number of subscribers is unknown to a TransformBroadcaster
-    cv::Mat xf = PublisherUtils::computeCameraTransform(GetCameraPose(), map_scale_);
+    // cv::Mat xf = PublisherUtils::computeCameraTransform(GetCameraPose(), map_scale_);
 
-    if (!xf.empty()) {
+    // if (!xf.empty()) {
 
-      /*
-       * DESCRIPTION:
-       * Map to camera transform is corrected pose of robot
-       * in the world frame.
-       * Therefore there is need to look for odom->camera transform
-       * or just base_link->camera.
-       * It will create correction in odometry coordinate system
-       * to align it with real world frame.
-       *
-       */
-      try {
+    //   /*
+    //    * DESCRIPTION:
+    //    * Map to camera transform is corrected pose of robot
+    //    * in the world frame.
+    //    * Therefore there is need to look for odom->camera transform
+    //    * or just base_link->camera.
+    //    * It will create correction in odometry coordinate system
+    //    * to align it with real world frame.
+    //    *
+    //    */
+    //   try {
 
-          std::string source_frame;
-          tf::StampedTransform tf_target;
-          source_frame = map_frame_adjusted_;
-          /* TODO: add as a parameter
-          if ( adjust_map_frame_ ) {
-            source_frame = map_frame_adjusted_; // interface?
-          } else {
-            source_frame = map_frame_;          // base_frame_; - buggy at the moment
-          }
-          */
-          tf_listener_.lookupTransform(camera_frame_,  source_frame,
-                                       ros::Time(0), tf_target);
+    //       std::string source_frame;
+    //       tf::StampedTransform tf_target;
 
-          camera_position_ = {  xf.at<float>(0, 3),
-                                xf.at<float>(1, 3),
-                                xf.at<float>(2, 3) };
+    //       // if ( adjust_map_frame_ ) {
+    //       //   source_frame = map_frame_adjusted_; // interface?
+    //       // } else {
+    //       //   source_frame = map_frame_;          // base_frame_; - buggy at the moment
+    //       // }
+    //       // source_frame = map_frame_; // Feels like it should work but breaks the whole thing
+          
+    //       source_frame = base_frame_;
 
-          tf::Quaternion orientation = PublisherUtils::convertToQuaternion<tf::Quaternion>(xf);
+    //       tf_listener_.lookupTransform(camera_frame_,  source_frame,
+    //                                    ros::Time(0), tf_target);
 
-          /* ------------------------------------
-           * Camera's pose in map coordinate system
-           * divided into translation and rotation
-           */
-          tf::Transform Tmc = PublisherUtils::createTF(camera_position_,
-                                                       orientation);
+    //       camera_position_ = {  xf.at<float>(0, 3),
+    //                             xf.at<float>(1, 3),
+    //                             xf.at<float>(2, 3) };
 
-          /* ------------------------------------
-           * Camera_optical pose in odom coordinate system
-           * divided into translation and rotation
-           */
-          tf::Transform Toc = PublisherUtils::createTF(tf_target.getOrigin(),
-                                                       tf_target.getRotation());
+    //       tf::Quaternion orientation = PublisherUtils::convertToQuaternion<tf::Quaternion>(xf);
 
-          /* ------------------------------------
-           * Additional rotation for interface frame
-           * (no translation component) - static tf
-           */
-          static const tf::Transform Toc_int = PublisherUtils::createTF(tf::Vector3(0.0, 0.0, 0.0),
-                                                                        PublisherUtils::quaternionFromRPY(0.0, -90.0, 90.0));
-          Toc = Toc * Toc_int; // rotation applied to already transformed system (odom is reference here)
-
-          /* ------------------------------------
-           * Additional camera translation (it is
-           * mounted on top of the mobile base)
-           */
-          static const tf::Transform T_d_cam = PublisherUtils::createTF(tf::Vector3(0.0, 0.0, camera_height_),
-                                                                        PublisherUtils::quaternionFromRPY(0.0, 0.0, 0.0));
-
-          /* ------------------------------------
-           * Final computations
-           * TODO: interface frame should be allowed to be connected to /base_link or /odom
-           * not only to /odom
-           */
-          tf::Transform Tmo = Toc.inverse() * Tmc;
-          Tmo = T_d_cam * Tmo;
-
-          tf::StampedTransform transform(Tmo, ros::Time::now(), map_frame_,  source_frame);
-          camera_tf_pub_.sendTransform(transform);
-
-          // camera trajectory extraction
-          cam_pose_ = PublisherUtils::getPoseStamped(&Tmo, &camera_frame_);
-
-          ResetCamFlag();
+    //       /* ------------------------------------
+    //        * Camera's pose in map coordinate system
+    //        * divided into translation and rotation
+    //        */
+    //       tf::Transform Tmc = PublisherUtils::createTF(camera_position_,
+    //                                                    orientation);
 
 
-      } catch (tf::TransformException &ex) {
-          ROS_ERROR("%s",ex.what());
-          ros::Duration(3.0).sleep();
-      }
-    }
+    //       /* ------------------------------------
+    //        * Transformation from the map frame to the final frame 
+    //        * of the pose (/odom or /base_link depending on settings)
+    //        */
+    //       tf::Transform Tmf;
+
+    //       // Correct with odometry if using that setup
+    //       if ( perform_scale_correction_ && 
+    //            GetSystem()->GetSensorType() == ORB_SLAM2::System::eSensor::MONOCULAR) {
+
+    //         /* ------------------------------------
+    //         * Camera_optical pose in odom coordinate system
+    //         * divided into translation and rotation
+    //         */
+    //         tf::Transform Toc = PublisherUtils::createTF(tf_target.getOrigin(),
+    //                                                     tf_target.getRotation());
+
+    //         /* ------------------------------------
+    //         * Additional rotation for interface frame
+    //         * (no translation component) - static tf
+    //         */
+    //         static const tf::Transform Toc_int = PublisherUtils::createTF(tf::Vector3(0.0, 0.0, 0.0),
+    //                                                                       PublisherUtils::quaternionFromRPY(0.0, -90.0, 90.0));
+    //         Toc = Toc * Toc_int; // rotation applied to already transformed system (odom is reference here)
+
+    //         /* ------------------------------------
+    //         * Final computations
+    //         * TODO: interface frame should be allowed to be connected to /base_link or /odom
+    //         * not only to /odom
+    //         */
+    //         tf::Transform Tmo = Toc.inverse() * Tmc;
+    //         Tmf = Tmo;
+
+    //       } // Or just use the camera frame
+    //       else {
+    //         /* ------------------------------------
+    //         * Additional rotation for interface frame
+    //         * (no translation component) - static tf
+    //         */
+    //         static const tf::Transform Toc_int = PublisherUtils::createTF(tf::Vector3(0.0, 0.0, 0.0),
+    //                                                                       PublisherUtils::quaternionFromRPY(0.0, -90.0, 90.0));
+    //         Tmf = Tmc;
+    //       }
+              
+    //       /* ------------------------------------
+    //       * Additional camera translation (it is
+    //       * mounted on top of the mobile base)
+    //       */
+    //       static const tf::Transform T_d_cam = PublisherUtils::createTF(tf::Vector3(0.0, 0.0, camera_height_),
+    //                                                                     PublisherUtils::quaternionFromRPY(0.0, 0.0, 0.0));
+
+    //       Tmf = T_d_cam * Tmf;
+          
+    //       // tf::StampedTransform transform(Tmf, ros::Time::now(), map_frame_,  source_frame);
+    //       tf::StampedTransform transform(Tmf, current_frame_time_, map_frame_,  source_frame);
+    //       // std::cout << "ros::Time::now()=" << ros::Time::now() << "  and  current_frame_time_=" << current_frame_time_ << std::endl;
+    //       camera_tf_pub_.sendTransform(transform);
+
+    //       // camera trajectory extraction
+    //       cam_pose_ = PublisherUtils::getPoseStamped(&Tmf, &camera_frame_);
+    //       // cam_pose_.header.stamp = ros::Time::now();
+          
+    //       cam_pose_.header.stamp = current_frame_time_;
+
+    //       cam_pose_.header.frame_id = map_frame_;
+
+    //       // if (cam_pose_pub_.getNumSubscribers() > 0)
+    //       cam_pose_pub_.publish(cam_pose_);
+
+    //       ResetCamFlag();
+
+
+    //   } catch (tf::TransformException &ex) {
+    //       ROS_ERROR("%s",ex.what());
+    //       ros::Duration(3.0).sleep();
+    //   }
+    // }
 }
 
 /*
@@ -810,7 +990,7 @@ void ROSPublisher::publishCameraPose()
  */
 void ROSPublisher::publishOctomap()
 {
-    if (octomap_pub_.getNumSubscribers() > 0)
+    if (octomap_pub_.getNumSubscribers() > 0 || !octomap_requires_subscriber_)
     {
         auto t0 = std::chrono::system_clock::now();
         octomap_msgs::Octomap msgOctomap;
@@ -827,7 +1007,8 @@ void ROSPublisher::publishOctomap()
           msgOctomap.header.frame_id =  map_frame_;
         }
         */
-        msgOctomap.header.stamp = ros::Time::now();
+        //  msgOctomap.header.stamp = ros::Time::now();
+        msgOctomap.header.stamp = current_frame_time_;
         if (octomap_msgs::binaryMapToMsg(octomap_, msgOctomap))   // TODO: full/binary...?
         {
             auto tn = std::chrono::system_clock::now();
@@ -853,14 +1034,15 @@ void ROSPublisher::publishState(Tracking *tracking)
         orb_state_ = PublisherUtils::toORBStateMessage(tracking->mState);
     }
 
-    if (state_pub_.getNumSubscribers() > 0)
+    if (state_pub_.getNumSubscribers() > 0 || !requires_subscriber_)
     {
         // publish state as ORBState int
-        orb_state_.header.stamp = ros::Time::now();
+        // orb_state_.header.stamp = ros::Time::now();
+        orb_state_.header.stamp = current_frame_time_;
         state_pub_.publish(orb_state_);
     }
 
-    if (state_desc_pub_.getNumSubscribers() > 0)
+    if (state_desc_pub_.getNumSubscribers() > 0 || !requires_subscriber_)
     {
         // publish state as string
         std_msgs::String state_desc_msg;
@@ -878,7 +1060,7 @@ void ROSPublisher::publishState(Tracking *tracking)
 void ROSPublisher::publishImage(Tracking *tracking)
 {
 
-    if (image_pub_.getNumSubscribers() > 0)
+    if (image_pub_.getNumSubscribers() > 0 || image_requires_subscriber_)
     {
 
       drawer_.Update(tracking);
@@ -888,6 +1070,8 @@ void ROSPublisher::publishImage(Tracking *tracking)
 
       auto image_msg = cv_img.toImageMsg();
       image_msg->header = hdr;
+      // image_msg->header.stamp = ros::Time::now();
+      image_msg->header.stamp = current_frame_time_;
       image_pub_.publish(*image_msg);
 
     }
@@ -902,7 +1086,7 @@ void ROSPublisher::publishProjectedMap()
     int8_t proj_sub_nr = projected_map_pub_.getNumSubscribers();
     int8_t proj_ero_sub_nr = projected_morpho_map_pub_.getNumSubscribers();
 
-    if ( proj_sub_nr | proj_ero_sub_nr ) {
+    if ( proj_sub_nr || proj_ero_sub_nr || !octomap_requires_subscriber_) {
 
         static nav_msgs::OccupancyGrid msg;
         static nav_msgs::OccupancyGrid msg_eroded;
@@ -923,8 +1107,10 @@ void ROSPublisher::publishProjectedMap()
           msg_eroded.header.frame_id =  map_frame_;
         }
         */
-        msg.header.stamp = ros::Time::now();
-        msg_eroded.header.stamp = ros::Time::now();
+        // msg.header.stamp = ros::Time::now();;
+        // msg_eroded.header.stamp = ros::Time::now();;
+        msg.header.stamp = current_frame_time_;
+        msg_eroded.header.stamp = current_frame_time_;
 
         octomapCutToOccupancyGrid(octomap_, msg, msg_eroded, projection_min_height_, projection_max_height_);
 
@@ -959,7 +1145,8 @@ void ROSPublisher::publishGradientMap()
           msg.header.frame_id =  map_frame_;
         }
         */
-        msg.header.stamp = ros::Time::now();
+        // msg.header.stamp = ros::Time::now();
+        msg.header.stamp = current_frame_time_;
 
         octomapGradientToOccupancyGrid(octomap_, msg,
                                        gradient_max_height_, gradient_nb_erosions_,
@@ -969,20 +1156,26 @@ void ROSPublisher::publishGradientMap()
     }
 }
 
-void ROSPublisher::publishCamTrajectory() {
+void ROSPublisher::publishCamTrajectory()
+{
 
   static nav_msgs::Path msg;
 
   if ( clear_path_ ) {
+    std::cout << "Clear Camera Trajectory\n";
     msg.poses.clear();
     clear_path_ = false;
   }
 
-  if ( trajectory_pub_.getNumSubscribers() > 0) {
+  if ( trajectory_pub_.getNumSubscribers() > 0 || !requires_subscriber_) {
     msg.header.frame_id = map_frame_;
-    msg.header.stamp = ros::Time::now();
-    msg.poses.push_back(cam_pose_);
+    // msg.header.stamp = ros::Time::now();
+    msg.header.stamp = current_frame_time_;
+
+    geometry_msgs::PoseStamped trajectory_pose = cam_pose_;
+    msg.poses.push_back(trajectory_pose);
     trajectory_pub_.publish(msg);
+
   }
 
 }
@@ -1019,27 +1212,38 @@ void ROSPublisher::camInfoUpdater() {
   // these operations are moved from Run() to separate thread, it was crucial in my application
   // to get camera pose updates as frequently as possible
 
+  // static ros::Time last_camera_update = ros::Time::now();
+  static ros::Time last_camera_update = current_frame_time_;
+
   while (WaitCycleStart()) {
     if ( isCamUpdated() ) {
 
-      static ros::Time last_camera_update;
-      float tf_delta = (ros::Time::now() - last_camera_update).toSec();
-      last_camera_update = ros::Time::now();
+      // float tf_delta = (ros::Time::now() - last_camera_update).toSec();
+      // last_camera_update = ros::Time::now();
+      float tf_delta = (current_frame_time_ - last_camera_update).toSec();
+      last_camera_update = current_frame_time_;
 
-      publishCameraPose();
+      cv::Mat orbCameraPose = GetCameraPose();
 
-      // for better visualization only
-      if ( tf_delta < 0.75 ) {
-        ROS_INFO("Updated camera pose published after %.3f",  tf_delta);
-      } else if ( tf_delta < 1.50 ) {
-        ROS_WARN("Updated camera pose published after %.3f",  tf_delta);
-      } else {
-        ROS_ERROR("Updated camera pose published after %.3f", tf_delta);
+      if(!orbCameraPose.empty()) {
+
+        publishCameraPose(orbCameraPose);
+
+        // for better visualization only
+        if ( tf_delta < 0.75 ) {
+          // ROS_INFO("Updated camera pose published after %.3f",  tf_delta);
+        } else if ( tf_delta < 1.50 ) {
+          ROS_WARN("Updated camera pose published after %.3f",  tf_delta);
+        } else {
+          ROS_ERROR("Updated camera pose published after %.3f", tf_delta);
+        }
+
+        publishCamTrajectory();
+
       }
 
-      publishCamTrajectory();
-
-      if ( ros::Time::now() >= (last_state_publish_time_ +
+      // if ( ros::Time::now() >= (last_state_publish_time_ +
+      if ( current_frame_time_ >= (last_state_publish_time_ +
            ros::Duration(1. / orb_state_republish_rate_)) )
       {
          // it's time to re-publish info
@@ -1049,7 +1253,8 @@ void ROSPublisher::camInfoUpdater() {
          publishUInt32Msg(kp_pub_, drawer_.GetKeypointsNb());
          publishUInt32Msg(mp_pub_, drawer_.GetMatchedPointsNb());
          publishLoopState(GetLoopCloser()->isRunningGBA()); // GBA is quite time-consuming task so it will probably be detected here
-         last_state_publish_time_ = ros::Time::now();
+        //  last_state_publish_time_ = ros::Time::now();
+         last_state_publish_time_ = current_frame_time_;
       }
     }
   }
@@ -1065,60 +1270,60 @@ void ROSPublisher::Run()
 
     ROS_INFO("ROS publisher started");
 
-    if ( perform_scale_correction_ && GetSystem()->GetSensorType() == ORB_SLAM2::System::eSensor::MONOCULAR) {
+    // if ( perform_scale_correction_ && GetSystem()->GetSensorType() == ORB_SLAM2::System::eSensor::MONOCULAR) {
 
-      bool scale_correction = false; // flag to check state at the end
-      ScaleCorrector scale_corrector(scaling_distance_);
-      ROS_INFO("Waiting for initialization...");
-      while ( GetSystem()->GetTrackingState() <= ORB_SLAM2::Tracking::NOT_INITIALIZED ) {
+    //   bool scale_correction = false; // flag to check state at the end
+    //   ScaleCorrector scale_corrector(scaling_distance_);
+    //   ROS_INFO("Waiting for initialization...");
+    //   while ( GetSystem()->GetTrackingState() <= ORB_SLAM2::Tracking::NOT_INITIALIZED ) {
 
-        if ( isStopRequested() ) {
-          Stop();
-          // GetSystem()->Shutdown();
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      }
+    //     if ( isStopRequested() ) {
+    //       Stop();
+    //       // GetSystem()->Shutdown();
+    //     }
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    //   }
 
-      ROS_WARN("Starting the map scale correction procedure...");
-      ROS_WARN("You should move the robot constantly in one direction");
+    //   ROS_WARN("Starting the map scale correction procedure...");
+    //   ROS_WARN("You should move the robot constantly in one direction");
 
-      while ( !scale_corrector.isScaleUpdated() ) {
-        scale_correction = true;
-        // TODO: freezes when trying to shutdown here
-        cv::Mat xf = PublisherUtils::computeCameraTransform(GetCameraPose());
-        if ( !scale_corrector.gotCamPosition() ) {
-          scale_corrector.setCameraStartingPoint(xf.at<float>(0, 3),
-                                                 xf.at<float>(1, 3),
-                                                 xf.at<float>(2, 3));
-        }
+    //   while ( !scale_corrector.isScaleUpdated() ) {
+    //     scale_correction = true;
+    //     // TODO: freezes when trying to shutdown here
+    //     cv::Mat xf = PublisherUtils::computeCameraTransform(GetCameraPose());
+    //     if ( !scale_corrector.gotCamPosition() ) {
+    //       scale_corrector.setCameraStartingPoint(xf.at<float>(0, 3),
+    //                                              xf.at<float>(1, 3),
+    //                                              xf.at<float>(2, 3));
+    //     }
 
-        if ( scale_corrector.isReady() ) {
-          scale_corrector.calculateScale(xf.at<float>(0, 3),
-                                         xf.at<float>(1, 3),
-                                         xf.at<float>(2, 3));
-        }
-        if ( isStopRequested() ) {
-          Stop();
-          scale_correction = false;
-          // GetSystem()->Shutdown();
-          ROS_WARN("Scale correction procedure must be stopped");
-        }
-        if ( GetSystem()->GetTrackingState() == ORB_SLAM2::Tracking::LOST ) {
-          ROS_WARN("Scale correction procedure couldn't be fully performed - tracking lost. Try to re-initialize");
-          scale_correction = false;
-          break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    //     if ( scale_corrector.isReady() ) {
+    //       scale_corrector.calculateScale(xf.at<float>(0, 3),
+    //                                      xf.at<float>(1, 3),
+    //                                      xf.at<float>(2, 3));
+    //     }
+    //     if ( isStopRequested() ) {
+    //       Stop();
+    //       scale_correction = false;
+    //       // GetSystem()->Shutdown();
+    //       ROS_WARN("Scale correction procedure must be stopped");
+    //     }
+    //     if ( GetSystem()->GetTrackingState() == ORB_SLAM2::Tracking::LOST ) {
+    //       ROS_WARN("Scale correction procedure couldn't be fully performed - tracking lost. Try to re-initialize");
+    //       scale_correction = false;
+    //       break;
+    //     }
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-      }
+    //   }
 
-      if ( scale_correction ) {
-        map_scale_ = scale_corrector.getScale();
-        ROS_INFO("Map scale corrected!");
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // just to check scale
-      }
+    //   if ( scale_correction ) {
+    //     map_scale_ = scale_corrector.getScale();
+    //     ROS_INFO("Map scale corrected!");
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // just to check scale
+    //   }
 
-    }
+    // }
 
     /*
      * Moved here from constructor - there is a small map
@@ -1137,7 +1342,7 @@ void ROSPublisher::Run()
         if (isCamUpdated()) {
 
             publishMap();
-            // publishMapUpdates();
+            publishMapUpdates();
             if (octomap_enabled_)
             {
               // stashMapPoints(); // store current reference map points for the octomap worker
@@ -1152,24 +1357,27 @@ void ROSPublisher::Run()
 
 bool ROSPublisher::WaitCycleStart()
 {
-    if (!IPublisherThread::WaitCycleStart())
-        return false;
-    pub_rate_.sleep();
-    return true;
+  if (!IPublisherThread::WaitCycleStart())
+      return false;
+  pub_rate_.sleep();
+  return true;
 }
 
 void ROSPublisher::Update(Tracking *tracking)
 {
-    static std::mutex mutex;
-    if (tracking == nullptr)
-        return;
+  static std::mutex mutex;
+  if (tracking == nullptr)
+      return;
 
-    publishState(tracking);
+  publishState(tracking);
 
-    // TODO: Make sure the camera TF is correctly aligned. See:
-    // <http://docs.ros.org/jade/api/sensor_msgs/html/msg/Image.html>
+  // TODO: Make sure the camera TF is correctly aligned. See:
+  // <http://docs.ros.org/jade/api/sensor_msgs/html/msg/Image.html>
 
-    publishImage(tracking);
+  current_frame_time_ = ros::Time::now();
+  // current_frame_time_ = ros::Time (tracking->mCurrentFrame.mTimeStamp);
+
+  publishImage(tracking);
 }
 
 void ROSPublisher::clearCamTrajectoryCallback(const std_msgs::Bool::ConstPtr& msg) {

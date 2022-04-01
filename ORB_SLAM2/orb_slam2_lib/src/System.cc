@@ -56,19 +56,29 @@ System::GenericBuilder::GenericBuilder(const std::string &strVocFile,
         throw Failure(std::string("Failed to open settings file at: ") + strSettingsFile);
 
     clock_t tStart = clock();
-    if (has_suffix(strVocFile, ".txt")) {
 
-      if ( !mVocabulary.loadFromTextFile(strVocFile)) {
-            throw Failure(std::string("Failed to load vocabulary at: ") + strVocFile);
-      }
+    //Load ORB Vocabulary
+    cout << endl << "Loading ORB Vocabulary. Trying to load from binary first..." << endl;
+    
+    //try to load from the binary file
+    bool bVocLoad = mVocabulary.loadFromBinaryFile(strVocFile+".bin");
 
-    } else {
-
-      if ( !mVocabulary.loadFromBinaryFile(strVocFile)) {
-            throw Failure(std::string("Failed to load vocabulary at: ") + strVocFile);
-      }
-
+    if(!bVocLoad)
+    {
+        cerr << "Cannot find binary file for vocabulary. " << endl;
+        cerr << "Failed to open at: " << strVocFile+".bin" << endl;
+        cerr << "Trying to open the text file. This could take a while..." << endl;
+        bool bVocLoad2 = mVocabulary.loadFromTextFile(strVocFile+".txt");
+        if(!bVocLoad2)
+        {
+            cerr << "Wrong path to vocabulary. " << endl;
+            cerr << "Failed to open at: " << strVocFile << endl;
+            exit(-1);
+        }
+        cerr << "Saving the vocabulary to binary for the next time to " << strVocFile+".bin" << endl;
+        mVocabulary.saveToBinaryFile(strVocFile+".bin");
     }
+
     cout << "Vocabulary loaded in: " << ((double)(clock() - tStart)/CLOCKS_PER_SEC) << " s" << endl;
 
     mpKeyFrameDatabase = make_unique<KeyFrameDatabase>(mVocabulary);

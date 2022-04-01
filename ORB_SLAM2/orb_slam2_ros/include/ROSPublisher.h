@@ -20,14 +20,23 @@
 
 #include <ros/ros.h>
 #include <ros/time.h>
+
+#include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
+
 
 #include <nav_msgs/OccupancyGrid.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <std_msgs/Bool.h>
 
 #include <octomap/OcTree.h>
+
+// #include <pcl/filters/passthrough.h>
 
 #include <orb_slam2_ros/ORBState.h>
 
@@ -77,7 +86,7 @@ private:
 
     void publishMap();
     void publishMapUpdates();
-    void publishCameraPose();
+    void publishCameraPose(cv::Mat orbCameraPose);
     void publishOctomap();
     void publishState(ORB_SLAM2::Tracking *tracking);
     void publishImage(ORB_SLAM2::Tracking *tracking);
@@ -90,14 +99,21 @@ private:
     /* Important: 'nh_' goes before the '*_pub_', because their
     ** construction relies on 'nh_'! */
     ros::NodeHandle   nh_;
+    std::string name_of_node_;
+
     ros::Publisher    map_pub_, map_updates_pub_, image_pub_, odom_pub_,
                       state_pub_, state_desc_pub_, octomap_pub_,
                       projected_map_pub_, projected_morpho_map_pub_, gradient_map_pub_,
                       kf_pub_, kp_pub_, mp_pub_,
+                      cam_pose_pub_,
                       trajectory_pub_,
                       loop_close_pub_;
     ros::Rate         pub_rate_;
     std::thread       info_updater_thread_;
+
+    bool              requires_subscriber_;
+    bool              octomap_requires_subscriber_;
+    bool              image_requires_subscriber_;
 
     geometry_msgs::PoseStamped cam_pose_;
     ros::Subscriber   clear_path_sub_;
@@ -116,6 +132,14 @@ private:
     void              publishUInt32Msg(const ros::Publisher &pub, const unsigned long &data);
 
     // -------- TF
+    // initialization Transform listener
+    boost::shared_ptr<tf2_ros::Buffer> tfBuffer_;
+    boost::shared_ptr<tf2_ros::TransformListener> tfListener_;
+
+    tf2::Transform TransformFromMat (cv::Mat position_mat);
+    tf2::Transform TransformToTarget (tf2::Transform tf_in, std::string frame_in, std::string frame_target);
+    sensor_msgs::PointCloud2 MapPointsToPointCloud (std::vector<ORB_SLAM2::MapPoint*> map_points);
+
     tf::TransformListener     tf_listener_;
     tf::TransformBroadcaster  camera_tf_pub_;
     tf::Vector3               camera_position_;
@@ -142,12 +166,18 @@ private:
     bool            publish_gradient_map_;
 
     // ------ PCL
+    sensor_msgs::PointCloud2 all_map_points_;
+    sensor_msgs::PointCloud2 reference_map_points_;
     octomap::Pointcloud pointcloud_map_points_;
     std::mutex          pointcloud_map_points_mutex_;
     int                 pointcloud_chunks_stashed_;
     float               map_scale_;
 
     // params for z-plane-based occupancy grid approach
+    // pcl::PassThrough<sensor_msgs::PointCloud2> pass_x_;
+    // pcl::PassThrough<sensor_msgs::PointCloud2> pass_y_;
+    double  pointcloud_min_x_, pointcloud_max_x_;
+    double  pointcloud_min_y_, pointcloud_max_y_;
     double  projection_min_height_;
     double  projection_max_height_;
 
@@ -172,6 +202,9 @@ private:
     std::string camera_frame_;
     std::string map_frame_adjusted_;
     std::string base_frame_;
+
+    // time from header of current frame image
+    ros::Time               current_frame_time_;
 
     // state republish rate
     orb_slam2_ros::ORBState orb_state_;

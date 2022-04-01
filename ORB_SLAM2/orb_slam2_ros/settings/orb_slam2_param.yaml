@@ -1,31 +1,35 @@
 # orb_slam2_ros: # uncomment this if you will load params outside node's namespace in .launch file
   topic:
     freq: 100                               # frequency of SLAM system job
-    image_topic: "/raspicam_node/image/raw" # "/webcam/image_raw"
+    image_topic: "/raspicam_node/image/raw" # NOT USED BY RGBD
     orb_state_republish_rate: 10            # re-publish state in Hz
+    requires_subscriber: false              # whether most publishers should be lazy or not
+    image_requires_subscriber: false        # whether status image should be published lazily
   map_scale:
-    perform_correction: true                    # possible to do with wheel encoders and robot description
+    set_manually: 1.00                          # manually set map scale - how visually sparse the map is; no effect if correction is set true
+    perform_correction: false                    # possible to do with wheel encoders and robot description
     odom_topic: "/mobile_base_controller/odom"  # topic that odometry data are published on (valid if correction set true)
-    scaling_distance: 0.75                      # distance to move according to odom topic, to perform scale estimation 
-    set_manually: 2.45                          # manually set map scale - how visually sparse the map is; no effect if correction is set true
+    scaling_distance: 0.75                      # distance to move according to odom topic, to perform scale estimation
     camera_height: 0.205                        # camera height above base_link frame (it is automatically checked in tf_tree if scale correction is performed)
     camera_height_multiplier: 0.75              # just for better visualization (if the PCL is too low) - scale is not always perfect
   frame:
+    adjust_map_frame: false                  # whether to use odometry adjusted map frame
     map_frame: "map"                         # global static map
     map_frame_adjusted: "map_odom_interface" # name of interface frame between /map and /odom
     base_frame: "base_link"                  # robot base frame
     camera_frame: "camera_optical"           # optical (see REP103) frame of camera
   octomap:
     enabled: true                # if set false - octomap, projected map and gradient map will not be published
-    publish_octomap: true        # octree's voxels visualization
+    requires_subscriber: false   # when enabled toggles whether a direct subscriber is required (false to turn off lazy publishing mode)
+    publish_octomap: false       # octree's voxels visualization
     publish_projected_map: true  # map created as an aggregating cut through a z-interval; configurable additional morphological operations
     publish_gradient_map: false  # map created as height gradients of PCL points
     rebuild: false               # clear octomap when tracking is lost and rebuild
     rate: 0.5                    # rate of octomap cycles (integrate MapPoints and publish)
-    resolution: 0.20             # side of a square in meters; how many meters in real world represent px of map; 
+    resolution: 0.10             # side of a square in meters; how many meters in real world represent px of map; 
   occupancy:
     projected_map:  
-      min_height: 0.02     # an aggregating cut through a z-interval
+      min_height: 0.50     # an aggregating cut through a z-interval
       max_height: 2.50     # an aggregating cut through a z-interval
       
       morpho_oprations:    # these are performed in the following order

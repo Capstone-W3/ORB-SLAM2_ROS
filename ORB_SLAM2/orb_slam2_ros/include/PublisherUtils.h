@@ -19,6 +19,10 @@
 
 namespace PublisherUtils {
 
+// tf2::Transform                TransformFromMat (cv::Mat position_mat);
+// tf2::Transform                TransformToTarget (tf2::Transform tf_in, std::string frame_in, std::string frame_target);
+
+
 const orb_slam2_ros::ORBState toORBStateMessage(ORB_SLAM2::Tracking::eTrackingState trackingState);
 geometry_msgs::PoseStamped    getPoseStamped(const tf::Transform* tf_, const std::string* frame_id_);
 sensor_msgs::PointCloud2      convertToPCL2( const std::vector<ORB_SLAM2::MapPoint*> &map_points, const double &map_scale, const float &camera_height);

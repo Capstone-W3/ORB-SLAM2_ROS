@@ -7,6 +7,108 @@
 
 #include <include/PublisherUtils.h>
 
+
+// tf2::Transform PublisherUtils::TransformFromMat (cv::Mat position_mat) {
+//     cv::Mat rotation(3,3,CV_32F);
+//     cv::Mat translation(3,1,CV_32F);
+
+//     rotation = position_mat.rowRange(0,3).colRange(0,3);
+//     translation = position_mat.rowRange(0,3).col(3);
+
+
+//     tf2::Matrix3x3 tf_rot_orbMap_to_orbCam (rotation.at<float> (0,0), rotation.at<float> (0,1), rotation.at<float> (0,2),
+//                                             rotation.at<float> (1,0), rotation.at<float> (1,1), rotation.at<float> (1,2),
+//                                             rotation.at<float> (2,0), rotation.at<float> (2,1), rotation.at<float> (2,2)
+//                                             );
+
+//     tf2::Vector3 tf_trans_orbMap_to_orbCam (translation.at<float> (0), translation.at<float> (1), translation.at<float> (2));
+
+//     //Coordinate transformation matrix from orb coordinate system to ros coordinate system
+//     const tf2::Matrix3x3 tf_orb_to_ros (0, 0, 1,
+//                                     -1, 0, 0,
+//                                         0,-1, 0);
+
+//     /*
+//         R^rosMap_rosCam =  T^orb_ros * R^orbMap_orbCam * T^orb_ros
+//     */
+
+//     tf2::Matrix3x3 tf_rot_orbCam_to_rosCam, tf_rot_rosCam_to_orbCam, tf_rot_orbCam_to_rosMap;
+//     tf2::Vector3   tf_trans_orbCam_to_rosCam, tf_trans_rosCam_to_orbCam, tf_trans_orbCam_to_rosMap;
+    
+//     //Transform from orb coordinate system to ros coordinate system on camera coordinates
+//     tf_rot_orbCam_to_rosCam = tf_orb_to_ros*tf_rot_orbMap_to_orbCam;
+//     tf_trans_orbCam_to_rosCam = tf_orb_to_ros*tf_trans_orbMap_to_orbCam;
+
+//     //Inverse matrix
+//     tf_rot_rosCam_to_orbCam = tf_rot_orbCam_to_rosCam.transpose();
+//     tf_trans_rosCam_to_orbCam = -(tf_rot_rosCam_to_orbCam*tf_trans_orbCam_to_rosCam);
+
+//     //Transform from orb coordinate system to ros coordinate system on map coordinates
+//     tf_rot_orbCam_to_rosMap = tf_orb_to_ros*tf_rot_rosCam_to_orbCam;
+//     tf_trans_orbCam_to_rosMap = tf_orb_to_ros*tf_trans_rosCam_to_orbCam;
+
+
+
+
+//     return tf2::Transform (tf_rot_orbCam_to_rosMap, tf_trans_orbCam_to_rosMap);
+// }
+
+
+// tf2::Transform PublisherUtils::TransformToTarget (tf2::Transform tf_in, std::string frame_in, std::string frame_target) {
+//   // Transform tf_in from frame_in to frame_target
+//   tf2::Transform tf_map2orig = tf_in;
+//   tf2::Transform tf_orig2target;
+//   tf2::Transform tf_map2target;
+
+//   tf2::Stamped<tf2::Transform> transformStamped_temp;
+//   try {
+//     // Get the transform from camera to target
+//     geometry_msgs::TransformStamped tf_msg = tfBuffer->lookupTransform(frame_in, frame_target, ros::Time(0));
+//     // Convert to tf2
+//     tf2::fromMsg(tf_msg, transformStamped_temp);
+//     tf_orig2target.setBasis(transformStamped_temp.getBasis());
+//     tf_orig2target.setOrigin(transformStamped_temp.getOrigin());
+
+//   } catch (tf2::TransformException &ex) {
+//     ROS_WARN("%s",ex.what());
+//     //ros::Duration(1.0).sleep();
+//     tf_orig2target.setIdentity();
+//   }
+
+//   /* 
+//     // Print debug info
+//     double roll, pitch, yaw;
+//     // Print debug map2orig
+//     tf2::Matrix3x3(tf_map2orig.getRotation()).getRPY(roll, pitch, yaw);
+//     ROS_INFO("Static transform Map to Orig [%s -> %s]",
+//                     map_frame_id_param_.c_str(), frame_in.c_str());
+//     ROS_INFO(" * Translation: {%.3f,%.3f,%.3f}",
+//                     tf_map2orig.getOrigin().x(), tf_map2orig.getOrigin().y(), tf_map2orig.getOrigin().z());
+//     ROS_INFO(" * Rotation: {%.3f,%.3f,%.3f}",
+//                     RAD2DEG(roll), RAD2DEG(pitch), RAD2DEG(yaw));
+//     // Print debug tf_orig2target
+//     tf2::Matrix3x3(tf_orig2target.getRotation()).getRPY(roll, pitch, yaw);
+//     ROS_INFO("Static transform Orig to Target [%s -> %s]",
+//                     frame_in.c_str(), frame_target.c_str());
+//     ROS_INFO(" * Translation: {%.3f,%.3f,%.3f}",
+//                     tf_orig2target.getOrigin().x(), tf_orig2target.getOrigin().y(), tf_orig2target.getOrigin().z());
+//     ROS_INFO(" * Rotation: {%.3f,%.3f,%.3f}",
+//                     RAD2DEG(roll), RAD2DEG(pitch), RAD2DEG(yaw));
+//     // Print debug map2target
+//     tf2::Matrix3x3(tf_map2target.getRotation()).getRPY(roll, pitch, yaw);
+//     ROS_INFO("Static transform Map to Target [%s -> %s]",
+//                     map_frame_id_param_.c_str(), frame_target.c_str());
+//     ROS_INFO(" * Translation: {%.3f,%.3f,%.3f}",
+//                     tf_map2target.getOrigin().x(), tf_map2target.getOrigin().y(), tf_map2target.getOrigin().z());
+//     ROS_INFO(" * Rotation: {%.3f,%.3f,%.3f}",
+//                     RAD2DEG(roll), RAD2DEG(pitch), RAD2DEG(yaw));
+//   */
+
+//   // Transform from map to target
+//   tf_map2target = tf_map2orig * tf_orig2target;
+//   return tf_map2target;
+// }
+
 sensor_msgs::PointCloud2 PublisherUtils::convertToPCL2( const std::vector<ORB_SLAM2::MapPoint*> &map_points,
                                                         const double &map_scale,
                                                         const float &camera_height)
@@ -36,7 +138,7 @@ sensor_msgs::PointCloud2 PublisherUtils::convertToPCL2( const std::vector<ORB_SL
 
     }
     ros::Duration tStop = (ros::Time::now() - tStart);
-    ROS_INFO("sending PointCloud (%lu points), conversion took %.3f sec", n_map_points, tStop.toSec());
+    // ROS_INFO("sending PointCloud (%lu points), conversion took %.3f sec", n_map_points, tStop.toSec());
 
     static const char* const names[3] = { "x", "y", "z" };
     static const std::size_t offsets[3] = { offsetof(point, x), offsetof(point, y), offsetof(point, z) };
@@ -169,7 +271,7 @@ geometry_msgs::PoseStamped PublisherUtils::getPoseStamped(const tf::Transform* t
     geometry_msgs::PoseStamped pose;
 
     pose.header.frame_id = *frame_id_;
-    pose.header.stamp = ros::Time::now();
+    pose.header.stamp = ros::Time::now(); // Will be overwritten
     pose.pose.position.x = tf_->getOrigin().x();
     pose.pose.position.y = tf_->getOrigin().y();
     pose.pose.position.z = tf_->getOrigin().z();

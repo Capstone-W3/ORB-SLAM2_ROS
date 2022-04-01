@@ -63,26 +63,27 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "Mono");
     ros::start();
 
-    if(argc != 3)
-    {
-        cerr << endl << "Usage: rosrun ORB_SLAM2 Mono path_to_vocabulary path_to_settings" << endl;
-        ros::shutdown();
-        return 1;
+    if(argc > 1) {
+        ROS_WARN ("Arguments supplied via command line are neglected.");
     }
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
     double freq;
-    std::string image_topic;
+    std::string image_topic, voc_file, camera_settings_file;
 
     // Set up a namespace for topics
     ros::NodeHandle nh("/orb_slam2");
-    nh.param<double>("/orb_slam2_ros/topic/freq", freq, 100.0);
-    nh.param<std::string>("/orb_slam2_ros/topic/image_topic", image_topic, ROSPublisher::DEFAULT_IMAGE_TOPIC);
+    std::string name_of_node_ = ros::this_node::getName();
+
+    nh.param<double>(name_of_node_ + "/topic/freq", freq, 100.0);
+    nh.param<std::string>(name_of_node_ + "/topic/image_topic", image_topic, ROSPublisher::DEFAULT_IMAGE_TOPIC);
+    nh.param<std::string>(name_of_node_ + "/voc_file", voc_file);
+    nh.param<std::string>(name_of_node_ + "/camera_settings_file", camera_settings_file);
 
     cout << "Loading BoW vocabulary..." << endl;
     ORB_SLAM2::System SLAM( make_unique<ROSSystemBuilder>(
-                            argv[1],
-                            argv[2],
+                            voc_file,
+                            camera_settings_file,
                             ORB_SLAM2::System::MONOCULAR,
                             freq,
                             nh));
