@@ -2,3 +2,4 @@ ORB_SLAM2/.vscode/
 ORB_SLAM2/orb_slam2_lib/Vocabulary/ORBvoc.txt
 ORB_SLAM2/orb_slam2_lib/Vocabulary/ORBvoc.bin
 ORB_SLAM2/orb_slam2_lib/Vocabulary/ORBvoc.txt.tar.gz
+ORB_SLAM2/orb_slam2_ros/bags/*

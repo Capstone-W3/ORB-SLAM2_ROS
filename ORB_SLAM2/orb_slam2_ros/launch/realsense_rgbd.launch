@@ -24,4 +24,16 @@
         <rosparam command="load" file="$(find orb_slam2_ros)/settings/orb_slam2_param.yaml" />
             </node>
 
+    <node pkg="rosbag" type="record" name="orbslam_recorder" args="-O $(find orb_slam2_ros)/bags/orbslam_output
+	/tf
+	/frame
+	/map
+	/cam_path
+	/cam_pose
+	/projected_map
+	/camera/color/image_raw
+	/camera/aligned_depth_to_color/image_raw
+	/clock
+    " />
+
 </launch>
