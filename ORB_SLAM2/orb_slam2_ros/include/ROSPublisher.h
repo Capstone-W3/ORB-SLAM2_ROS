@@ -86,13 +86,18 @@ private:
 
     void publishMap();
     void publishMapUpdates();
-    void publishCameraPose(cv::Mat orbCameraPose);
+    void publishCurrentCameraPose(cv::Mat orbCameraPose);
     void publishOctomap();
     void publishState(ORB_SLAM2::Tracking *tracking);
     void publishImage(ORB_SLAM2::Tracking *tracking);
     void publishProjectedMap();
     void publishGradientMap();
-    void publishCamTrajectory();
+    void publishCamTrajectory(bool finished_loop_closure);
+
+    bool checkLoopClosure();
+    geometry_msgs::TransformStamped getTransformBaseInMap(cv::Mat orb_Pmap_camera, ros::Time frame_time);
+    geometry_msgs::PoseStamped getPoseBaseInMap(cv::Mat orb_Pmap_camera, ros::Time frame_time);
+
 
     ORB_SLAM2::FrameDrawer drawer_;
 
@@ -125,7 +130,7 @@ private:
     void              localizationModeCallback(const std_msgs::Bool::ConstPtr& msg);
     void              checkMode();
     bool              localize_only;
-    void              publishLoopState(const bool &state);
+    void              publishLoopState();
 
     // -------- Feature Points
     void              publishKeypointsNb(const int &nb);
@@ -212,7 +217,8 @@ private:
     float                   orb_state_republish_rate_;
 
     // loop closing republish
-    std_msgs::Bool          loop_close_state_;
+    bool                    loop_close_state_;
+    int                     num_loop_closures_;
     ros::Time               last_loop_close_publish_time_;
     float                   loop_close_republish_rate_;
 
