@@ -1,0 +1,42 @@
+<launch>
+    <include file="$(find turtlebot_bringup)/launch/minimal.launch"/>
+    <include file="$(find realsense2_camera)/launch/rs_rgbd.launch"/>
+
+	<node pkg="tf" type="static_transform_publisher" name="cameraToRobot" 
+          args="0 0 0 0 0 0 base_link camera_optical 100" > 
+        <param name="/use_sim_time" value="true" />
+    </node>
+	<node pkg="tf" type="static_transform_publisher" name="adjustMapFrameOdom" 
+          args="0 0 0 0 0 0 base_link map_odom_interface 100" > 
+        <param name="/use_sim_time" value="true" />
+    </node>
+
+
+    <node pkg="orb_slam2_ros" type="RGBD" name="orb_slam2_node" cwd="node" output="screen">
+        
+        <param name="/use_sim_time" value="true" />
+        
+        <param name="voc_file"      type="string" value="$(find orb_slam2_lib)/Vocabulary/ORBvoc" />
+        <param name="camera_settings_file" type="string" value="$(find orb_slam2_ros)/settings/realsense_rgbd.yaml" />
+
+        
+        <remap from="/camera/rgb/image_raw" to="/camera/color/image_raw" />
+        <!-- remap from="/camera/depth_registered/image_raw" to="/camera/depth_registered/sw_registered/image_rect" / -->
+        <remap from="/camera/depth_registered/image_raw" to="/camera/aligned_depth_to_color/image_raw" />
+    
+        <rosparam command="load" file="$(find orb_slam2_ros)/settings/orb_slam2_param.yaml" />
+            </node>
+
+    <node pkg="rosbag" type="record" name="orbslam_recorder" args="-O $(find orb_slam2_ros)/bags/orbslam_output
+	/tf
+	/frame
+	/map
+	/cam_path
+	/cam_pose
+	/projected_map
+	/camera/color/image_raw
+	/camera/aligned_depth_to_color/image_raw
+	/clock
+    " />
+
+</launch>
