@@ -6,4 +6,4 @@ ORB_SLAM2/orb_slam2_ros/bags/*
 ORB_SLAM2/orb_slam2_lib/Thirdparty/DBoW2/lib/libDBoW2.so
 **/libDBoW2.so
 */libg2o.so
-*/bin_vocabulary
+ORB_SLAM2/orb_slam2_lib/bin_vocabulary
