@@ -1,4 +1,8 @@
 <launch>
+    <include file="$(find turtlebot_bringup)/launch/minimal.launch"/>
+    <include file="$(find realsense2_camera)/launch/rs_rgbd.launch"/>
+    <include file="$(find darknet_ros)/launch/trash_darknet_ros.launch"/>
+
 	<node pkg="tf" type="static_transform_publisher" name="cameraToRobot" 
           args="0 0 0 0 0 0 base_link camera_optical 100" > 
         <param name="/use_sim_time" value="true" />
@@ -24,5 +28,17 @@
         <rosparam command="load" file="$(find orb_slam2_ros)/settings/orb_slam2_param.yaml" />
             </node>
 
+    <node pkg="rosbag" type="record" name="orbslam_recorder" args="-O $(find orb_slam2_ros)/bags/orbslam_output
+	/tf
+	/frame
+	/map
+	/cam_path
+	/cam_pose
+	/projected_map
+	/camera/color/image_raw
+	/camera/aligned_depth_to_color/image_raw
+        /darknet_ros/bounding_boxes
+	/clock
+    " />
 
 </launch>
