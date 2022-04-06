@@ -1072,7 +1072,8 @@ void ROSPublisher::publishProjectedMap()
         // one of maps published
         if ( proj_sub_nr > 0 ) {
           projected_map_pub_.publish(msg);
-        } else {
+        } 
+        if ( proj_ero_sub_nr > 0) {
           projected_morpho_map_pub_.publish(msg_eroded);
         }
     }

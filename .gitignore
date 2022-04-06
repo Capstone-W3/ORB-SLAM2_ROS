@@ -2,8 +2,7 @@ ORB_SLAM2/.vscode/
 ORB_SLAM2/orb_slam2_lib/Vocabulary/ORBvoc.txt
 ORB_SLAM2/orb_slam2_lib/Vocabulary/ORBvoc.bin
 ORB_SLAM2/orb_slam2_lib/Vocabulary/ORBvoc.txt.tar.gz
-ORB_SLAM2/orb_slam2_ros/bags/*
-ORB_SLAM2/orb_slam2_lib/Thirdparty/DBoW2/lib/libDBoW2.so
+ORB_SLAM2/orb_slam2_ros/bags/**
 **/libDBoW2.so
-*/libg2o.so
-ORB_SLAM2/orb_slam2_lib/bin_vocabulary
+**/libg2o.so
+**/bin_vocabulary

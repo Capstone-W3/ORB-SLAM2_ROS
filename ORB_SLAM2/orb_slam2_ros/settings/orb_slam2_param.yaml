@@ -45,7 +45,7 @@
     resolution: 0.10             # side of a square in meters; how many meters in real world represent px of map; 
   occupancy:
     projected_map:  
-      min_height: 0.25     # an aggregating cut through a z-interval
+      min_height: 0.1     # an aggregating cut through a z-interval
       max_height: 2.50     # an aggregating cut through a z-interval
       
       morpho_oprations:    # these are performed in the following order
