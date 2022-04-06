@@ -5,6 +5,22 @@
     orb_state_republish_rate: 10            # re-publish state in Hz
     requires_subscriber: false              # whether most publishers should be lazy or not
     image_requires_subscriber: false        # whether status image should be published lazily
+    map: "map"
+    orb_image: "orb_image"
+    state: "info/state"
+    state_description: "info/state_description"
+    frame_keypoints: "info/frame_keypoints"
+    map_keyframes: "info/map_keyframes"
+    matched_points: "info/matched_points"
+    loop_closed: "info/loop_closed"
+    num_loop_closures: "info/num_loop_closures"
+    cam_pose: "cam_pose"
+    cam_path: "cam_path"
+    octomap: "octomap"
+    projected_map: "projected_map"
+    projected_morpho_map: "projected_morpho_map"
+    gradient_map: "gradient_map"
+
   map_scale:
     set_manually: 1.00                          # manually set map scale - how visually sparse the map is; no effect if correction is set true
     perform_correction: false                    # possible to do with wheel encoders and robot description
@@ -23,13 +39,13 @@
     requires_subscriber: false   # when enabled toggles whether a direct subscriber is required (false to turn off lazy publishing mode)
     publish_octomap: false       # octree's voxels visualization
     publish_projected_map: true  # map created as an aggregating cut through a z-interval; configurable additional morphological operations
-    publish_gradient_map: false  # map created as height gradients of PCL points
+    publish_gradient_map: true   # map created as height gradients of PCL points
     rebuild: false               # clear octomap when tracking is lost and rebuild
     rate: 0.5                    # rate of octomap cycles (integrate MapPoints and publish)
     resolution: 0.10             # side of a square in meters; how many meters in real world represent px of map; 
   occupancy:
     projected_map:  
-      min_height: 0.50     # an aggregating cut through a z-interval
+      min_height: 0.25     # an aggregating cut through a z-interval
       max_height: 2.50     # an aggregating cut through a z-interval
       
       morpho_oprations:    # these are performed in the following order

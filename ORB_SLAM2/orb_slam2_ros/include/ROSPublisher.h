@@ -112,7 +112,15 @@ private:
                       kf_pub_, kp_pub_, mp_pub_,
                       cam_pose_pub_,
                       trajectory_pub_,
-                      loop_close_pub_;
+                      loop_close_pub_, num_loop_closures_pub_;
+    std::string       map_topic_, map_updates_topic_, image_topic_, 
+                      state_topic_, state_disc_topic_, kp_topic_, kf_topic_, mp_topic_, 
+                      loop_close_topic_, num_loop_closures_topic_, 
+                      cam_pose_topic_, trajectory_topic_,
+                      octomap_topic_, 
+                      projected_map_topic_, projected_morpho_map_topic_,
+                      gradient_map_topic_;
+
     ros::Rate         pub_rate_;
     std::thread       info_updater_thread_;
 
@@ -131,6 +139,7 @@ private:
     void              checkMode();
     bool              localize_only;
     void              publishLoopState();
+    void              publishNumLoopClosures();
 
     // -------- Feature Points
     void              publishKeypointsNb(const int &nb);

@@ -72,6 +72,7 @@ ROSPublisher::ROSPublisher(Map *map, double frequency, ros::NodeHandle nh) :
   kf_pub_          = nh_.advertise<std_msgs::UInt32>("info/map_keyframes", 1);
   mp_pub_          = nh_.advertise<std_msgs::UInt32>("info/matched_points", 1);
   loop_close_pub_  = nh_.advertise<std_msgs::Bool>("info/loop_closed", 2);
+  num_loop_closures_pub_  = nh_.advertise<std_msgs::UInt32>("info/num_loop_closures", 2);
   cam_pose_pub_    = nh_.advertise<geometry_msgs::PoseStamped>("cam_pose", 2);
   trajectory_pub_  = nh_.advertise<nav_msgs::Path>("cam_path", 2);
 
@@ -148,6 +149,26 @@ ROSPublisher::ROSPublisher(Map *map, double frequency, ros::NodeHandle nh) :
 }
 
 void ROSPublisher::initializeParameters(ros::NodeHandle &nh) {
+
+  nh.param<std::string>(name_of_node_ + "/topic/map", map_topic_, "map");
+  nh.param<std::string>(name_of_node_ + "/topic/map_updates", map_updates_topic_, "map_updates");
+  nh.param<std::string>(name_of_node_ + "/topic/orb_image", image_topic_, "orb_image");
+  nh.param<std::string>(name_of_node_ + "/topic/state", state_topic_, "info/state");
+  nh.param<std::string>(name_of_node_ + "/topic/state_description", state_disc_topic_, "info/state_description");
+  nh.param<std::string>(name_of_node_ + "/topic/frame_keypoints", kp_topic_, "info/frame_keypoints");
+  nh.param<std::string>(name_of_node_ + "/topic/map_keyframes", kf_topic_, "info/map_keyframes");
+
+  nh.param<std::string>(name_of_node_ + "/topic/matched_points", mp_topic_, "info/matched_points");
+  nh.param<std::string>(name_of_node_ + "/topic/loop_closed", loop_close_topic_, "info/loop_closed");
+  nh.param<std::string>(name_of_node_ + "/topic/num_loop_closures", num_loop_closures_topic_, "info/num_loop_closures");
+  nh.param<std::string>(name_of_node_ + "/topic/cam_pose", cam_pose_topic_, "cam_pose");
+  nh.param<std::string>(name_of_node_ + "/topic/cam_path", trajectory_topic_, "cam_path");
+  
+  nh.param<std::string>(name_of_node_ + "/topic/octomap", octomap_topic_, "octomap");
+  nh.param<std::string>(name_of_node_ + "/topic/projected_map", projected_map_topic_, "projected_map");
+  nh.param<std::string>(name_of_node_ + "/topic/projected_morpho_map", projected_morpho_map_topic_, "projected_morpho_map");
+  nh.param<std::string>(name_of_node_ + "/topic/gradient_map", gradient_map_topic_, "igradient_map");
+
 
   // freq and image_topic are defined in ros_mono.cc
   nh.param<float>(name_of_node_ + "/topic/orb_state_republish_rate", orb_state_republish_rate_, 1);
@@ -504,7 +525,10 @@ void ROSPublisher::octomapWorker()
 /*
  * Creates a 2D Occupancy Grid from the Octomap.
  */
-void ROSPublisher::octomapCutToOccupancyGrid(const octomap::OcTree& octree, nav_msgs::OccupancyGrid& map, nav_msgs::OccupancyGrid& map_erode, const double minZ_, const double maxZ_ )
+void ROSPublisher::octomapCutToOccupancyGrid(const octomap::OcTree& octree, 
+                                             nav_msgs::OccupancyGrid& map, 
+                                             nav_msgs::OccupancyGrid& map_erode, 
+                                             const double minZ_, const double maxZ_ )
 {
 
     static const uint8_t a = 1;
@@ -1137,6 +1161,12 @@ void ROSPublisher::publishLoopState() {
   loop_close_pub_.publish(msg);
 }
 
+void ROSPublisher::publishNumLoopClosures() {
+  std_msgs::UInt32 msg;
+  msg.data = num_loop_closures_;
+  num_loop_closures_pub_.publish(msg);
+}
+
 void ROSPublisher::publishUInt32Msg(const ros::Publisher &pub, const unsigned long &data) {
   std_msgs::UInt32 msg;
   msg.data = data;
@@ -1168,6 +1198,7 @@ bool ROSPublisher::checkLoopClosure()
 
   if(loop_close_state_ & !loop_close_state_new) {
     num_loop_closures_++;
+    publishNumLoopClosures();
     end_loop_closure = true;
   }
   loop_close_state_ = loop_close_state_new;
@@ -1236,6 +1267,7 @@ void ROSPublisher::camInfoUpdater()
 
 
 }
+
 void ROSPublisher::Run()
 {
     using namespace std::this_thread;
