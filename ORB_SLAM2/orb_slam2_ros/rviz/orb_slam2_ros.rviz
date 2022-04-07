@@ -25,7 +25,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: PointCloud2
   - Class: rviz/Views
     Expanded:
       - /Current View1
@@ -91,13 +91,13 @@ Visualization Manager:
       Unreliable: false
       Value: true
     - Alpha: 1
-      Autocompute Intensity Bounds: true
+      Autocompute Intensity Bounds: false
       Autocompute Value Bounds:
         Max Value: 10
         Min Value: -10
         Value: true
       Axis: Z
-      Channel Name: intensity
+      Channel Name: z
       Class: rviz/PointCloud2
       Color: 255; 255; 255
       Color Transformer: Intensity
@@ -105,10 +105,10 @@ Visualization Manager:
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 4096
-      Min Color: 0; 0; 0
+      Max Intensity: 0.200000003
+      Min Color: 0; 0; 127
       Min Intensity: 0
-      Name: PointCloud2
+      Name: Map Cloud
       Position Transformer: XYZ
       Queue Size: 10
       Selectable: true
@@ -118,7 +118,7 @@ Visualization Manager:
       Topic: /map
       Unreliable: false
       Use Fixed Frame: true
-      Use rainbow: true
+      Use rainbow: false
       Value: true
     - Alpha: 1
       Buffer Length: 1
@@ -277,7 +277,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 18.35742
+      Distance: 11.0194359
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.0599999987
         Stereo Focal Distance: 1
@@ -292,10 +292,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.00999999978
-      Pitch: 0.994796753
+      Pitch: 0.564796269
       Target Frame: camera_optical
       Value: Orbit (rviz)
-      Yaw: 1.83539748
+      Yaw: 2.3754108
     Saved: ~
 Window Geometry:
   Depth Image:

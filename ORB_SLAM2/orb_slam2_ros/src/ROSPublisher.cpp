@@ -503,7 +503,9 @@ void ROSPublisher::octomapWorker()
             //ROS_INFO("Gradient map published");
           }
 
-          ROS_INFO("octomapWorker: finished cycle integrating %i pointcloud chunks.", pointcloud_chunks_stashed);
+          if ( pointcloud_chunks_stashed > 0 ) {
+            ROS_INFO("octomapWorker: finished cycle integrating %i pointcloud chunks.", pointcloud_chunks_stashed);
+          }
         }
         else
         {

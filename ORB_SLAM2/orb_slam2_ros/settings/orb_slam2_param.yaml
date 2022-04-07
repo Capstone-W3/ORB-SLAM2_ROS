@@ -45,18 +45,18 @@
     resolution: 0.10             # side of a square in meters; how many meters in real world represent px of map; 
   occupancy:
     projected_map:  
-      min_height: 0.1     # an aggregating cut through a z-interval
-      max_height: 2.50     # an aggregating cut through a z-interval
+      min_height: 0.2     # an aggregating cut through a z-interval
+      max_height: 2.0     # an aggregating cut through a z-interval
       
       morpho_oprations:    # these are performed in the following order
-        erode_se_size: 2   # default shape RECTANGLE
+        erode_se_size: 1   # default shape RECTANGLE
         erode_nb: 1        # how many 'erode' operations to perform
         open_se_size:  2   # default shape RECTANGLE
-        open_nb:  0        # how many 'open' operations to perform
-        close_se_size: 2   # default shape CROSS
-        close_nb: 2        # how many 'close' operations to perform
-        erode2_se_size: 3  # default shape ELLIPSE
-        erode2_nb: 0       # how many 'erode' operations to perform
+        open_nb:  1        # how many 'open' operations to perform
+        close_se_size: 5   # default shape CROSS
+        close_nb: 1        # how many 'close' operations to perform
+        erode2_se_size: 1  # default shape ELLIPSE
+        erode2_nb: 1       # how many 'erode' operations to perform
         
     height_gradient_map:
       max_height: 2.0      # maximal voxel-z to consider in gradient-based projection
