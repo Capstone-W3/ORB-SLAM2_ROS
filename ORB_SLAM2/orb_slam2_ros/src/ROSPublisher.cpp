@@ -61,6 +61,8 @@ ROSPublisher::ROSPublisher(Map *map, double frequency, ros::NodeHandle nh) :
 
   initializeParameters(nh);
   orb_state_.state = orb_slam2_ros::ORBState::UNKNOWN;
+  loop_close_state_ = false;
+  num_loop_closures_ = 0;
 
   // initialize publishers
   map_pub_         = nh_.advertise<sensor_msgs::PointCloud2>("map", 3);
@@ -978,6 +980,7 @@ void ROSPublisher::publishOctomap()
 void ROSPublisher::publishState(Tracking *tracking)
 {
   static orb_slam2_ros::ORBState orb_state_last;
+  orb_state_last.state = orb_state_.state;
 
     if (tracking != NULL) {
         // save state from tracking, even if there are no subscribers
@@ -988,9 +991,8 @@ void ROSPublisher::publishState(Tracking *tracking)
     {
       ROS_INFO("Updated ORBState from %s to %s\n", PublisherUtils::stateDescription(orb_state_last), 
                                                     PublisherUtils::stateDescription(orb_state_));
-      orb_state_last.state = orb_state_.state;
     }
-        
+
     if (state_pub_.getNumSubscribers() > 0 || !requires_subscriber_)
     {
         // publish state as ORBState int
@@ -1003,8 +1005,7 @@ void ROSPublisher::publishState(Tracking *tracking)
     {
         // publish state as string
         std_msgs::String state_desc_msg;
-        // const char* test = PublisherUtils::stateDescription(orb_state_);
-        state_desc_msg.data = PublisherUtils::stateDescription(orb_state_); // stateDescription(orb_state_);
+        state_desc_msg.data = PublisherUtils::stateDescription(orb_state_);
         state_desc_pub_.publish(state_desc_msg);
     }
 
@@ -1195,7 +1196,7 @@ bool ROSPublisher::checkLoopClosure()
 {
   // Increment on the falling edge of bundle adjustment (which takes care of loop closing updates)
 
-  bool loop_close_state_new = GetLoopCloser()->isRunningGBA();
+  const bool loop_close_state_new = GetLoopCloser()->isRunningGBA();
   // Should publish number of loop closures for others to use in tracking for closure
   bool end_loop_closure = false;
 
