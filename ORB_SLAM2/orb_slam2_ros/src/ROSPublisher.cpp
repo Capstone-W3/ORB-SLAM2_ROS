@@ -65,18 +65,18 @@ ROSPublisher::ROSPublisher(Map *map, double frequency, ros::NodeHandle nh) :
   num_loop_closures_ = 0;
 
   // initialize publishers
-  map_pub_         = nh_.advertise<sensor_msgs::PointCloud2>("map", 3);
-  map_updates_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("map_updates", 3);
-  image_pub_       = nh_.advertise<sensor_msgs::Image>("frame", 5);
-  state_pub_       = nh_.advertise<orb_slam2_ros::ORBState>("info/state", 10);
-  state_desc_pub_  = nh_.advertise<std_msgs::String>("info/state_description", 10);
-  kp_pub_          = nh_.advertise<std_msgs::UInt32>("info/frame_keypoints", 1);
-  kf_pub_          = nh_.advertise<std_msgs::UInt32>("info/map_keyframes", 1);
-  mp_pub_          = nh_.advertise<std_msgs::UInt32>("info/matched_points", 1);
-  loop_close_pub_  = nh_.advertise<std_msgs::Bool>("info/loop_closed", 2);
-  num_loop_closures_pub_  = nh_.advertise<std_msgs::UInt32>("info/num_loop_closures", 2);
-  cam_pose_pub_    = nh_.advertise<geometry_msgs::PoseStamped>("cam_pose", 2);
-  trajectory_pub_  = nh_.advertise<nav_msgs::Path>("cam_path", 2);
+  map_pub_         = nh_.advertise<sensor_msgs::PointCloud2>(map_topic_, 3);
+  map_updates_pub_ = nh_.advertise<sensor_msgs::PointCloud2>(map_updates_topic_, 3);
+  image_pub_       = nh_.advertise<sensor_msgs::Image>(image_topic_, 5);
+  state_pub_       = nh_.advertise<orb_slam2_ros::ORBState>(state_topic_, 10);
+  state_desc_pub_  = nh_.advertise<std_msgs::String>(state_disc_topic_, 10);
+  kp_pub_          = nh_.advertise<std_msgs::UInt32>(kp_topic_, 1);
+  kf_pub_          = nh_.advertise<std_msgs::UInt32>(kf_topic_, 1);
+  mp_pub_          = nh_.advertise<std_msgs::UInt32>(mp_topic_, 1);
+  loop_close_pub_  = nh_.advertise<std_msgs::Bool>(loop_close_topic_, 2);
+  num_loop_closures_pub_  = nh_.advertise<std_msgs::UInt32>(num_loop_closures_topic_, 2);
+  cam_pose_pub_    = nh_.advertise<geometry_msgs::PoseStamped>(cam_pose_topic_, 2);
+  trajectory_pub_  = nh_.advertise<nav_msgs::Path>(trajectory_topic_, 2);
 
   // initialize subscribers
   mode_sub_       = nh_.subscribe("switch_mode",    1, &ROSPublisher::localizationModeCallback,   this);
@@ -89,14 +89,14 @@ ROSPublisher::ROSPublisher(Map *map, double frequency, ros::NodeHandle nh) :
   if (octomap_enabled_)
   {
     if ( publish_octomap_ ) {
-      octomap_pub_ = nh_.advertise<octomap_msgs::Octomap>("octomap", 3);
+      octomap_pub_ = nh_.advertise<octomap_msgs::Octomap>(octomap_topic_, 3);
     }
     if ( publish_projected_map_ ) {
-      projected_map_pub_ = nh.advertise<nav_msgs::OccupancyGrid>("projected_map", 5, 10);
-      projected_morpho_map_pub_ = nh.advertise<nav_msgs::OccupancyGrid>("projected_morpho_map", 5, 10);
+      projected_map_pub_ = nh.advertise<nav_msgs::OccupancyGrid>(projected_map_topic_, 5, 10);
+      projected_morpho_map_pub_ = nh.advertise<nav_msgs::OccupancyGrid>(projected_morpho_map_topic_, 5, 10);
     }
     if ( publish_gradient_map_ ) {
-      gradient_map_pub_ = nh.advertise<nav_msgs::OccupancyGrid>("gradient_map", 5, 10);
+      gradient_map_pub_ = nh.advertise<nav_msgs::OccupancyGrid>(gradient_map_topic_, 5, 10);
     }
   }
 
