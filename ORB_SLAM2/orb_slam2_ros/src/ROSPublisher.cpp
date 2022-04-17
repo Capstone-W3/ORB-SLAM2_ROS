@@ -1128,25 +1128,35 @@ void ROSPublisher::publishCamTrajectory(bool finished_loop_closure)
   }
 
   // Global bundle adjustment just finished
-  if (finished_loop_closure) {
-    static std::vector<KeyFrame*> current_key_frames = GetMap()->GetAllKeyFrames();
+  // if (finished_loop_closure) {
+  //   ROS_INFO("Updating camera trajectory after finishing loop closure #%d",  num_loop_closures_);
+    
+  //   static std::vector<KeyFrame*> current_key_frames = GetMap()->GetAllKeyFrames();
+    
+  //   ROS_INFO("Iterating over trajectory of size %d and #Kfs is %d",  msg.poses.size(), current_key_frames.size());
 
-    for (unsigned int msg_iter=0; msg_iter<msg.poses.size(); msg_iter++) {
-      // Update the pose and transform for each key point 
-      cv::Mat orb_kf_pose_adjusted = current_key_frames[msg_iter]->GetPose();
+  //   for (unsigned int msg_iter=0; msg_iter<msg.poses.size(); msg_iter++) {
+  //     std::cout << "On iteration #" << msg_iter << " at time " << msg.poses[msg_iter].header.stamp <<  std::endl;
+      
+  //     // Update the pose and transform for each key point 
+  //     cv::Mat orb_kf_pose_adjusted = current_key_frames[msg_iter]->GetPose();
+  //     std::cout << "    from " << msg.poses[msg_iter].pose.position;
+  //     msg.poses[msg_iter] = getPoseBaseInMap(orb_kf_pose_adjusted, msg.poses[msg_iter].header.stamp);
+  //     std::cout << "    to " << msg.poses[msg_iter].pose.position;
 
-      msg.poses[msg_iter] = getPoseBaseInMap(orb_kf_pose_adjusted, msg.poses[msg_iter].header.stamp);
-
-      geometry_msgs::TransformStamped msg_Tmap_base = getTransformBaseInMap(orb_kf_pose_adjusted, msg.poses[msg_iter].header.stamp);
-      camera_tf_pub_.sendTransform(msg_Tmap_base);
-    }
-    trajectory_pub_.publish(msg);
-  }
+  //     // geometry_msgs::TransformStamped msg_Tmap_base = getTransformBaseInMap(orb_kf_pose_adjusted, msg.poses[msg_iter].header.stamp);
+  //     // camera_tf_pub_.sendTransform(msg_Tmap_base);
+  //   }
+  //   // trajectory_pub_.publish(msg);
+  // }
 
   if ( trajectory_pub_.getNumSubscribers() > 0 || !requires_subscriber_) {
     static int num_key_frames;
 
     if (drawer_.GetKeyFramesNb() != num_key_frames) {
+
+      num_key_frames = drawer_.GetKeyFramesNb();
+      
       msg.header.frame_id = map_frame_;
       // msg.header.stamp = ros::Time::now();
       msg.header.stamp = current_frame_time_;
